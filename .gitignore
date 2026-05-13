@@ -20,3 +20,7 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated outputs
+mm1_report.html
+simulation_data.json
