@@ -333,7 +333,7 @@ class MM1Simulation:
 
 
 # ============================================================
-# 理论值计算
+# 分析功能
 # ============================================================
 
 def theoretical_values(config: SimulationConfig) -> dict:
@@ -367,6 +367,220 @@ def theoretical_values(config: SimulationConfig) -> dict:
         "P0": round(P0, 4),
         "U": round(U, 4),
     }
+
+
+# ============================================================
+# 分析功能
+# ============================================================
+
+def system_state_probability(result: SimulationResult,
+                              config: SimulationConfig,
+                              max_n: int = 10) -> dict:
+    """
+    分析系统状态概率分布 P(n) = ρⁿ(1-ρ)
+
+    通过统计仿真过程中系统中有 n 个顾客的时刻占比，
+    与理论值进行对比。
+    """
+    records = result.records
+    if not records:
+        return {"sim": [], "theory": [], "labels": []}
+
+    # 统计系统逗留期间每个时刻的系统人数
+    # 使用到达和离开事件构建系统人数变化
+    # 筛除尚未完成服务的顾客（departure_time 为 None）
+    events = []
+    for r in records:
+        if r.departure_time is None:
+            continue
+        events.append((r.arrival_time, +1))
+        events.append((r.departure_time, -1))
+    events.sort(key=lambda x: x[0])
+
+    total_time = result.config.sim_time - result.config.warmup_time
+    system_counts = {}
+    current = 0
+    last_t = result.config.warmup_time
+
+    for t, delta in events:
+        if t < result.config.warmup_time:
+            current += delta
+            continue
+        dt = t - last_t
+        if dt > 0 and t <= result.config.sim_time:
+            system_counts[current] = system_counts.get(current, 0) + dt
+        current += delta
+        last_t = t
+
+    # 补最后一段
+    end_t = min(result.config.sim_time, events[-1][0] + 1)
+    dt = end_t - last_t
+    if dt > 0:
+        system_counts[current] = system_counts.get(current, 0) + dt
+
+    # 归一化
+    total_time = sum(system_counts.values())
+    if total_time == 0:
+        return {"sim": [], "theory": [], "labels": []}
+
+    sim_prob = []
+    labels = []
+    theory_prob = []
+    rho = config.rho
+    for n in range(max_n + 1):
+        sim_prob.append(round(system_counts.get(n, 0) / total_time, 6))
+        labels.append(str(n))
+        theory_prob.append(round(rho ** n * (1 - rho), 6))
+
+    return {
+        "labels": labels,
+        "sim": sim_prob,
+        "theory": theory_prob,
+    }
+
+
+def waiting_time_distribution(result: SimulationResult,
+                               config: SimulationConfig,
+                               num_points: int = 50) -> dict:
+    """
+    等待时间分布分析
+
+    理论生存函数（互补累积分布）:
+        P(Wq > t) = ρ · e^{-μ(1-ρ)t}
+
+    返回仿真经验生存函数与理论生存函数的对比点。
+    """
+    records = result.records
+    if not records:
+        return {"sim_t": [], "sim_survival": [], "theory_survival": []}
+
+    wait_times = np.array([r.waiting_time for r in records])
+    wait_times.sort()
+
+    t_max = np.quantile(wait_times, 0.99)
+    t_points = np.linspace(0, t_max, num_points)
+
+    # 经验生存函数: P(Wq > t) = 1 - F(t)
+    n = len(wait_times)
+    sim_survival = []
+    for t in t_points:
+        sim_survival.append(round(np.sum(wait_times > t) / n, 6))
+
+    # 理论生存函数: P(Wq > t) = ρ · exp(-μ(1-ρ)t)
+    mu = config.service_rate
+    rho = config.rho
+    theory_survival = [
+        round(rho * np.exp(-mu * (1 - rho) * t), 6) for t in t_points
+    ]
+
+    return {
+        "sim_t": [round(t, 4) for t in t_points],
+        "sim_survival": sim_survival,
+        "theory_survival": theory_survival,
+    }
+
+
+def run_batch_simulations(
+    rhos: list = None,
+    mu: float = 4.0,
+    sim_time: float = 2000.0,
+    warmup_time: float = 100.0,
+    seed: int = 42,
+) -> list:
+    """
+    批量运行不同 ρ 值的仿真，用于敏感性分析。
+
+    固定 μ，改变 λ 来实现不同的 ρ。
+    """
+    if rhos is None:
+        rhos = [0.3, 0.5, 0.7, 0.8, 0.9]
+
+    results = []
+    batch_seed = seed
+
+    for rho in rhos:
+        lam = rho * mu  # ρ = λ/μ → λ = ρ·μ
+        config = SimulationConfig(
+            arrival_rate=lam,
+            service_rate=mu,
+            sim_time=sim_time,
+            warmup_time=warmup_time,
+            seed=batch_seed,
+        )
+        sim = MM1Simulation(config)
+        result = sim.run()
+        theo = theoretical_values(config)
+
+        results.append({
+            "rho": round(rho, 2),
+            "lambda": round(lam, 2),
+            "mu": mu,
+            "sim_Wq": result.avg_waiting_time,
+            "theo_Wq": theo["Wq"],
+            "sim_W": result.avg_system_time,
+            "theo_W": theo["W"],
+            "sim_Lq": result.avg_queue_length,
+            "theo_Lq": theo["Lq"],
+            "sim_U": result.server_utilization,
+            "theo_U": theo["U"],
+            "sim_L": result.avg_customers_in_system,
+            "theo_L": theo["L"],
+            "total_customers": result.total_customers,
+            "error_Wq_pct": round(
+                abs(result.avg_waiting_time - theo["Wq"]) / theo["Wq"] * 100
+                if theo["Wq"] > 0 else 0, 2
+            ),
+            "error_U_pct": round(
+                abs(result.server_utilization - theo["U"]) / theo["U"] * 100
+                if theo["U"] > 0 else 0, 2
+            ),
+        })
+        batch_seed += 1  # 每个仿真用不同种子但可复现
+
+    return results
+
+
+def convergence_analysis(
+    base_config: SimulationConfig,
+    sim_times: list = None,
+) -> list:
+    """
+    收敛性分析：观察随着仿真时间增加，各指标误差的变化趋势。
+    """
+    if sim_times is None:
+        sim_times = [100, 200, 500, 1000, 2000, 5000, 10000]
+
+    results = []
+    for st in sim_times:
+        config = SimulationConfig(
+            arrival_rate=base_config.arrival_rate,
+            service_rate=base_config.service_rate,
+            sim_time=st,
+            warmup_time=min(st * 0.05, 100),
+            seed=base_config.seed,
+        )
+        sim = MM1Simulation(config)
+        result = sim.run()
+        theo = theoretical_values(config)
+
+        results.append({
+            "sim_time": st,
+            "total_customers": result.total_customers,
+            "sim_Wq": round(result.avg_waiting_time, 4),
+            "theo_Wq": theo["Wq"],
+            "error_Wq_pct": round(
+                abs(result.avg_waiting_time - theo["Wq"]) / theo["Wq"] * 100
+                if theo["Wq"] > 0 else 0, 2
+            ),
+            "sim_U": round(result.server_utilization, 4),
+            "theo_U": theo["U"],
+            "error_U_pct": round(
+                abs(result.server_utilization - theo["U"]) / theo["U"] * 100
+                if theo["U"] > 0 else 0, 2
+            ),
+        })
+
+    return results
 
 
 # ============================================================

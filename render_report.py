@@ -1,7 +1,7 @@
 """
 M/M/1 仿真报告渲染器
 ======================
-运行仿真 → 加载模板 → 渲染数据 → 生成 HTML 报告。
+运行仿真 → 多维度数据分析 → 渲染 HTML 报告。
 
 使用方法:
     python render_report.py                  # 默认参数
@@ -16,19 +16,18 @@ from datetime import datetime
 # 确保能导入同目录的模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from mm1_simulation import MM1Simulation, SimulationConfig, theoretical_values
+from mm1_simulation import (
+    MM1Simulation, SimulationConfig, theoretical_values,
+    system_state_probability, waiting_time_distribution,
+    run_batch_simulations, convergence_analysis,
+)
 
-# 尝试导入 Jinja2
 try:
     from jinja2 import Environment, FileSystemLoader
 except ImportError:
     print("❌ 需要安装 Jinja2: pip install jinja2")
     sys.exit(1)
 
-
-# ============================================================
-# 主渲染函数
-# ============================================================
 
 def render_report(
     arrival_rate: float = 3.0,
@@ -40,31 +39,8 @@ def render_report(
     template_dir: str = None,
 ) -> str:
     """
-    执行 M/M/1 仿真并生成 HTML 报告。
-
-    Parameters
-    ----------
-    arrival_rate : float
-        顾客到达率 λ
-    service_rate : float
-        服务率 μ
-    sim_time : float
-        仿真总时长
-    warmup_time : float
-        预热期（不计入统计）
-    seed : int
-        随机种子
-    output_dir : str
-        输出目录（默认当前脚本所在目录）
-    template_dir : str
-        模板目录（默认 output_dir/templates）
-
-    Returns
-    -------
-    str
-        生成的 HTML 文件路径
+    执行 M/M/1 仿真、多维度分析，并生成 HTML 报告。
     """
-    # ---- 确定路径 ----
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(__file__))
     if template_dir is None:
@@ -72,7 +48,9 @@ def render_report(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # ---- 1. 运行仿真 ----
+    # ============================================================
+    # 1. 主仿真
+    # ============================================================
     print(f"\n{'='*60}")
     print(f"  M/M/1 排队系统仿真报告生成器")
     print(f"{'='*60}")
@@ -82,8 +60,6 @@ def render_report(
     print(f"      ρ (负载)        = {arrival_rate/service_rate:.4f}")
     print(f"      仿真时长        = {sim_time}")
     print(f"      预热期          = {warmup_time}")
-    print(f"      随机种子        = {seed}")
-    print(f"\n  🚀 正在运行仿真...")
 
     config = SimulationConfig(
         arrival_rate=arrival_rate,
@@ -93,20 +69,102 @@ def render_report(
         seed=seed,
     )
 
+    print(f"\n  🚀 正在运行主仿真...")
     sim = MM1Simulation(config)
     result = sim.run()
+    print(f"  ✅ 主仿真完成! 到达: {result.total_customers}  服务: {result.customers_served}")
 
-    print(f"  ✅ 仿真完成!")
-    print(f"     到达顾客: {result.total_customers}  完成服务: {result.customers_served}")
-
-    # ---- 2. 准备数据 ----
     data = result.to_dict()
     theory = theoretical_values(config)
-
-    # 添加额外渲染信息
     data["generated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 转换时序数据为 JSON 字符串（Jinja2 模板中直接使用）
+    # ============================================================
+    # 2. 系统状态概率分析
+    # ============================================================
+    print(f"  📊 正在分析系统状态概率分布...")
+    state_prob = system_state_probability(result, config, max_n=10)
+
+    # ============================================================
+    # 3. 等待时间分布分析
+    # ============================================================
+    print(f"  📈 正在分析等待时间分布...")
+    wait_dist = waiting_time_distribution(result, config, num_points=60)
+
+    # ============================================================
+    # 4. 负载敏感性分析（多 ρ 批量仿真）
+    # ============================================================
+    print(f"  🔬 正在运行灵敏度分析（多 ρ 值）...")
+    rho_values = [0.3, 0.5, 0.7, 0.8, 0.85, 0.9, 0.95]
+    sensitivity = run_batch_simulations(
+        rhos=rho_values,
+        mu=service_rate,
+        sim_time=min(sim_time, 3000),
+        warmup_time=min(warmup_time, 200),
+        seed=seed,
+    )
+
+    # ============================================================
+    # 5. 收敛性分析
+    # ============================================================
+    print(f"  📉 正在分析仿真收敛性...")
+    convergence = convergence_analysis(
+        base_config=config,
+        sim_times=[100, 300, 500, 1000, 2000, 5000, 10000],
+    )
+
+    # ============================================================
+    # 6. 实际意义解读
+    # ============================================================
+    # 计算一些可读性强的分析结论
+    rho = config.rho
+    lam = arrival_rate
+    mu = service_rate
+    Wq_sim = result.avg_waiting_time
+    W_sim = result.avg_system_time
+    Lq_sim = result.avg_queue_length
+
+    # 如果利用率从 ρ 升到 ρ+0.1，等待时间变化倍数
+    higher_rho = min(rho + 0.1, 0.98)
+    if rho < 0.98:
+        wq_growth = (higher_rho / (1 - higher_rho)) / (rho / (1 - rho))
+    else:
+        wq_growth = 0
+
+    # 单位时间顾客数与等待时间的关系
+    waiting_times_array = [r.waiting_time for r in result.records]
+    pct_waiting_over_1 = sum(1 for w in waiting_times_array if w > 1.0) / max(len(waiting_times_array), 1) * 100
+    pct_waiting_over_2 = sum(1 for w in waiting_times_array if w > 2.0) / max(len(waiting_times_array), 1) * 100
+
+    # 理论空闲概率
+    p0 = 1 - rho
+
+    interpretation = {
+        "rho": rho,
+        "formatted_rho": f"{rho:.1%}",
+        "p0": p0,
+        "formatted_p0": f"{p0:.1%}",
+        "pct_waiting_over_1": round(pct_waiting_over_1, 1),
+        "pct_waiting_over_2": round(pct_waiting_over_2, 1),
+        "wq_growth_if_rho_plus_01": round(wq_growth, 2) if wq_growth > 0 else None,
+        "higher_rho": round(higher_rho, 2),
+        "arrivals_per_unit": lam,
+        "service_rate": mu,
+        "avg_wait": round(Wq_sim, 4),
+        "avg_system_time": round(W_sim, 4),
+        "avg_queue": round(Lq_sim, 2),
+        # 直观解读：平均每 λ 时间单位来一个顾客
+        "arrival_interval": round(1 / lam, 2),
+        "service_time": round(1 / mu, 2),
+        # 系统效率评分
+        "efficiency": "低负载 · 快速响应" if rho < 0.5 else
+                      "中等负载 · 运行良好" if rho < 0.7 else
+                      "高负载 · 接近容量极限" if rho < 0.9 else
+                      "极高负载 · 接近不稳定",
+    }
+
+    # ============================================================
+    # 7. 组装模板数据
+    # ============================================================
     data_for_template = {
         **data,
         "theoretical": theory,
@@ -114,9 +172,19 @@ def render_report(
         "wait_times": json.dumps(data["wait_times"]),
         "system_times": json.dumps(data["system_times"]),
         "utilization_ts": json.dumps(data["utilization_ts"]),
+        # 分析数据
+        "state_prob": json.dumps(state_prob),
+        "wait_dist": json.dumps(wait_dist),
+        "sensitivity": json.dumps(sensitivity),
+        "convergence": json.dumps(convergence),
+        "sensitivity_raw": sensitivity,
+        "convergence_raw": convergence,
+        "interpretation": interpretation,
     }
 
-    # ---- 3. 渲染 HTML ----
+    # ============================================================
+    # 8. 渲染 HTML
+    # ============================================================
     print(f"  🎨 渲染报告模板...")
 
     env = Environment(loader=FileSystemLoader(template_dir))
@@ -128,7 +196,6 @@ def render_report(
         **data_for_template,
     )
 
-    # ---- 4. 保存文件 ----
     output_path = os.path.join(output_dir, "mm1_report.html")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html_content)
@@ -141,24 +208,12 @@ def render_report(
     return output_path
 
 
-# ============================================================
-# 命令行入口
-# ============================================================
-
 def main():
     import argparse
-
     parser = argparse.ArgumentParser(
         description="M/M/1 排队系统仿真报告生成器",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-示例:
-    python render_report.py
-    python render_report.py --lambda 5 --mu 6 --time 3000
-    python render_report.py --lambda 2 --mu 5 --time 5000 --seed 123
-        """
     )
-
     parser.add_argument("--lambda", dest="arrival_rate", type=float, default=3.0,
                         help="顾客到达率 λ (默认: 3.0)")
     parser.add_argument("--mu", dest="service_rate", type=float, default=4.0,
@@ -174,11 +229,9 @@ def main():
 
     args = parser.parse_args()
 
-    # 验证 ρ < 1
     rho = args.arrival_rate / args.service_rate
     if rho >= 1:
         print(f"\n  ❌ 错误: ρ = {rho:.4f} >= 1，系统无法达到稳态!")
-        print(f"     请调整参数使 λ < μ (即 ρ < 1)。\n")
         sys.exit(1)
 
     render_report(
