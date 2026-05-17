@@ -168,6 +168,7 @@ def render_report(
     data_for_template = {
         **data,
         "theoretical": theory,
+        "total_slides": 15,
         "queue_length_ts": json.dumps(data["queue_length_ts"]),
         "wait_times": json.dumps(data["wait_times"]),
         "system_times": json.dumps(data["system_times"]),

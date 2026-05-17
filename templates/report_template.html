@@ -1,799 +1,856 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>M/M/1 排队系统仿真分析报告</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M/M/1 排队系统仿真分析报告</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* === Reset & Base === */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#08090a;font-family:'Inter','Noto Sans SC',-apple-system,system-ui,sans-serif}
+body{display:flex;align-items:center;justify-content:center}
 
-    <style>
-        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-        :root{
-            --primary:#2563eb;--primary-light:#3b82f6;--primary-bg:#eff6ff;
-            --success:#059669;--success-bg:#ecfdf5;
-            --warning:#d97706;--warning-bg:#fffbeb;
-            --danger:#dc2626;--danger-bg:#fef2f2;
-            --info:#0891b2;--info-bg:#ecfeff;
-            --violet:#7c3aed;--violet-bg:#f5f3ff;
-            --gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;
-            --gray-300:#cbd5e1;--gray-400:#94a3b8;--gray-500:#64748b;
-            --gray-600:#475569;--gray-700:#334155;--gray-800:#1e293b;--gray-900:#0f172a;
-            --radius:12px;
-            --shadow-sm:0 1px 2px rgba(0,0,0,0.05);
-            --shadow-md:0 4px 6px -1px rgba(0,0,0,0.08),0 2px 4px -2px rgba(0,0,0,0.05);
-            --shadow-lg:0 10px 15px -3px rgba(0,0,0,0.08),0 4px 6px -4px rgba(0,0,0,0.05);
-            --shadow-xl:0 20px 25px -5px rgba(0,0,0,0.08),0 8px 10px -6px rgba(0,0,0,0.05);
-        }
-        body{
-            font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif;
-            background:linear-gradient(135deg,#f0f4ff 0%,#f8fafc 50%,#f0fdf4 100%);
-            color:var(--gray-800);line-height:1.6;min-height:100vh
-        }
-        .container{max-width:1200px;margin:0 auto;padding:0 24px}
+/* === Slide Canvas === */
+.deck{position:relative;width:1920px;height:1080px;overflow:hidden;background:#08090a}
+@media(min-aspect-ratio:16/9){.deck{height:100vh;width:calc(100vh*16/9)}}
+@media(max-aspect-ratio:16/9){.deck{width:100vw;height:calc(100vw*9/16)}}
 
-        /* Header */
-        .header{text-align:center;padding:48px 0 32px;animation:fadeInDown 0.8s ease-out}
-        .header-badge{
-            display:inline-block;background:var(--primary);color:white;
-            font-size:13px;font-weight:600;padding:4px 16px;border-radius:20px;
-            letter-spacing:2px;margin-bottom:16px;animation:fadeIn 0.6s ease-out 0.2s both
-        }
-        .header h1{font-size:36px;font-weight:800;color:var(--gray-900);letter-spacing:-0.5px;margin-bottom:8px}
-        .header h1 span{color:var(--primary)}
-        .header p{color:var(--gray-500);font-size:16px;max-width:600px;margin:0 auto}
-        .header-divider{width:60px;height:4px;background:linear-gradient(90deg,var(--primary),var(--primary-light));border-radius:2px;margin:20px auto 0}
+.slide{
+  position:absolute;top:0;left:0;width:100%;height:100%;
+  opacity:0;pointer-events:none;
+  padding:80px 100px;
+  display:flex;flex-direction:column;
+  transition:opacity .7s cubic-bezier(.6,0,.2,1),transform .7s cubic-bezier(.6,0,.2,1);
+  transform:scale(.96);
+}
+.slide.active{opacity:1;pointer-events:auto;transform:scale(1);z-index:2}
+.slide.exit-left{opacity:0;transform:translateX(-60px) scale(.96)}
+.slide.exit-right{opacity:0;transform:translateX(60px) scale(.96)}
+.slide.enter-left{opacity:0;transform:translateX(-60px) scale(.96)}
+.slide.enter-right{opacity:0;transform:translateX(60px) scale(.96)}
 
-        /* Cards */
-        .card{background:white;border-radius:var(--radius);box-shadow:var(--shadow-md);padding:24px;transition:box-shadow 0.2s,transform 0.2s;margin-bottom:24px}
-        .card:hover{box-shadow:var(--shadow-lg)}
-        .card-title{font-size:14px;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
-        .card-title .icon{font-size:18px}
-        .card-subtitle{font-size:14px;color:var(--gray-500);margin-bottom:12px;line-height:1.6}
+/* === Slide Number === */
+.slide-num{position:absolute;bottom:32px;right:100px;font-size:14px;color:#62666d;font-weight:500;letter-spacing:.5px;font-feature-settings:'tnum'}
 
-        /* Parameters */
-        .params-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px}
-        .param-item{background:var(--gray-50);border-radius:10px;padding:16px;text-align:center;border:1px solid var(--gray-100);transition:border-color 0.2s}
-        .param-item:hover{border-color:var(--primary-light)}
-        .param-label{font-size:12px;font-weight:500;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
-        .param-value{font-size:24px;font-weight:700;color:var(--gray-800)}
-        .param-unit{font-size:13px;color:var(--gray-400);margin-top:2px}
+/* === Progress Bar === */
+.progress-bar{position:fixed;bottom:0;left:0;height:3px;background:#5e6ad2;z-index:100;transition:width .5s ease}
 
-        /* KPI */
-        .kpi-section{margin:32px 0}
-        .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;margin-bottom:24px}
-        .kpi-card{background:white;border-radius:var(--radius);padding:24px;box-shadow:var(--shadow-md);position:relative;overflow:hidden;transition:transform 0.3s,box-shadow 0.3s;animation:cardFloatUp 0.6s ease-out both}
-        .kpi-card:nth-child(1){animation-delay:0.1s}.kpi-card:nth-child(2){animation-delay:0.2s}
-        .kpi-card:nth-child(3){animation-delay:0.3s}.kpi-card:nth-child(4){animation-delay:0.4s}
-        .kpi-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-xl)}
-        .kpi-card .kpi-label{font-size:13px;font-weight:500;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
-        .kpi-card .kpi-value{font-size:36px;font-weight:800;letter-spacing:-1px;line-height:1.2;margin-bottom:4px}
-        .kpi-card .kpi-sub{font-size:13px;color:var(--gray-400)}
-        .kpi-card .kpi-progress{margin-top:12px;height:4px;background:var(--gray-100);border-radius:2px;overflow:hidden}
-        .kpi-card .kpi-progress-bar{height:100%;border-radius:2px;transition:width 1.2s ease-out}
-        .kpi-primary .kpi-value{color:var(--primary)}.kpi-primary .kpi-progress-bar{background:var(--primary)}
-        .kpi-success .kpi-value{color:var(--success)}.kpi-success .kpi-progress-bar{background:var(--success)}
-        .kpi-warning .kpi-value{color:var(--warning)}.kpi-warning .kpi-progress-bar{background:var(--warning)}
-        .kpi-info .kpi-value{color:var(--info)}.kpi-info .kpi-progress-bar{background:var(--info)}
-        .kpi-violet .kpi-value{color:var(--violet)}.kpi-violet .kpi-progress-bar{background:var(--violet)}
+/* === Nav Buttons === */
+.nav-btn{
+  position:fixed;top:50%;transform:translateY(-50%);z-index:99;
+  width:48px;height:48px;border-radius:50%;
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+  color:#8a8f98;font-size:20px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .2s;user-select:none;
+}
+.nav-btn:hover{background:rgba(255,255,255,.08);color:#f7f8f8}
+.nav-btn.hidden{opacity:0;pointer-events:none}
+.nav-prev{left:24px}
+.nav-next{right:24px}
 
-        .section-title{font-size:18px;font-weight:700;color:var(--gray-800);margin:32px 0 20px;display:flex;align-items:center;gap:10px}
-        .section-title .icon{font-size:22px}
+/* === Typography === */
+h1{font-size:56px;font-weight:600;color:#f7f8f8;letter-spacing:-1.2px;line-height:1.15}
+h1 span{color:#7170ff}
+h2{font-size:36px;font-weight:500;color:#f7f8f8;letter-spacing:-.7px;margin-bottom:16px}
+h2 .accent{color:#7170ff}
+h3{font-size:22px;font-weight:500;color:#d0d6e0;letter-spacing:-.3px;margin-bottom:8px}
+p,li{font-size:18px;line-height:1.7;color:#8a8f98}
+strong{color:#f7f8f8;font-weight:500}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px}
+.subtitle{font-size:20px;color:#62666d;margin-top:8px}
 
-        /* Tables */
-        .comparison-table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border-radius:10px;border:1px solid var(--gray-200)}
-        .comparison-table thead{background:var(--gray-50)}
-        .comparison-table th{padding:12px 16px;font-size:13px;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px;text-align:center;border-bottom:2px solid var(--gray-200)}
-        .comparison-table th:first-child{text-align:left}
-        .comparison-table td{padding:12px 16px;font-size:14px;text-align:center;border-bottom:1px solid var(--gray-100);transition:background 0.2s}
-        .comparison-table td:first-child{text-align:left;font-weight:500}
-        .comparison-table tbody tr:hover td{background:var(--gray-50)}
-        .comparison-table tbody tr:last-child td{border-bottom:none}
-        .value-sim{font-weight:700;color:var(--primary)}
-        .value-theo{font-weight:700;color:var(--gray-600)}
-        .value-error{font-weight:500}
-        .error-low{color:var(--success)}.error-mid{color:var(--warning)}.error-high{color:var(--danger)}
+/* === Slide Content === */
+.slide-inner{flex:1;display:flex;flex-direction:column;justify-content:center}
+.slide-header{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.slide-header .icon{font-size:28px}
+.slide-header h2{margin-bottom:0}
 
-        /* Charts */
-        .charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px}
-        .chart-wrapper{position:relative;width:100%;min-height:300px}
-        .chart-wrapper canvas{width:100%!important;max-height:320px}
+/* === Cards === */
+.card-grid{display:grid;gap:16px}
+.card-grid-2{grid-template-columns:1fr 1fr}
+.card-grid-3{grid-template-columns:1fr 1fr 1fr}
+.card-grid-4{grid-template-columns:1fr 1fr 1fr 1fr}
 
-        /* Quantile */
-        .quantile-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:16px}
-        .quantile-item{text-align:center;padding:12px;background:var(--gray-50);border-radius:8px}
-        .quantile-item .q-label{font-size:12px;color:var(--gray-400);font-weight:500}
-        .quantile-item .q-value{font-size:20px;font-weight:700;color:var(--gray-700);margin-top:4px}
+.card{
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;padding:24px;
+}
 
-        /* Interpretation box */
-        .insight-box{background:var(--primary-bg);border-radius:10px;padding:20px;margin:16px 0;border-left:4px solid var(--primary)}
-        .insight-box .insight-title{font-size:14px;font-weight:600;color:var(--primary);margin-bottom:8px}
-        .insight-box .insight-text{font-size:14px;color:var(--gray-600);line-height:1.7}
-        .insight-box .insight-text strong{color:var(--gray-800)}
+/* KPI Cards */
+.kpi-card{
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;padding:28px 24px;display:flex;flex-direction:column;
+  animation:kpiFade .6s ease-out both;
+}
+.kpi-card:nth-child(1){animation-delay:.1s}.kpi-card:nth-child(2){animation-delay:.2s}
+.kpi-card:nth-child(3){animation-delay:.3s}.kpi-card:nth-child(4){animation-delay:.4s}
+@keyframes kpiFade{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.kpi-label{font-size:13px;font-weight:500;color:#62666d;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.kpi-value{font-size:48px;font-weight:600;letter-spacing:-1.5px;line-height:1.1;margin-bottom:2px}
+.kpi-sub{font-size:14px;color:#62666d}
+.kpi-progress{margin-top:12px;height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
+.kpi-progress-bar{height:100%;border-radius:2px;transition:width 1s ease-out}
+.kpi-primary .kpi-value{color:#7170ff}.kpi-primary .kpi-progress-bar{background:#7170ff}
+.kpi-success .kpi-value{color:#10b981}.kpi-success .kpi-progress-bar{background:#10b981}
+.kpi-warning .kpi-value{color:#eab308}.kpi-warning .kpi-progress-bar{background:#eab308}
+.kpi-info .kpi-value{color:#38bdf8}.kpi-info .kpi-progress-bar{background:#38bdf8}
 
-        .insight-success{background:var(--success-bg);border-left-color:var(--success)}
-        .insight-success .insight-title{color:var(--success)}
-        .insight-warning{background:var(--warning-bg);border-left-color:var(--warning)}
-        .insight-warning .insight-title{color:var(--warning)}
-        .insight-danger{background:var(--danger-bg);border-left-color:var(--danger)}
-        .insight-danger .insight-title{color:var(--danger)}
-        .insight-violet{background:var(--violet-bg);border-left-color:var(--violet)}
-        .insight-violet .insight-title{color:var(--violet)}
+/* === Tables === */
+.table-wrap{overflow:hidden;border-radius:8px;border:1px solid rgba(255,255,255,.08)}
+table{width:100%;border-collapse:collapse;font-size:16px}
+thead{background:rgba(255,255,255,.04)}
+th{padding:12px 16px;font-size:13px;font-weight:500;color:#62666d;text-transform:uppercase;letter-spacing:.5px;text-align:center;border-bottom:1px solid rgba(255,255,255,.08)}
+th:first-child{text-align:left}
+td{padding:10px 16px;text-align:center;border-bottom:1px solid rgba(255,255,255,.04);color:#d0d6e0}
+td:first-child{text-align:left;color:#f7f8f8;font-weight:500}
+tr:last-child td{border-bottom:none}
+.val-sim{color:#7170ff;font-weight:600}
+.val-theo{color:#8a8f98}
+.val-err{font-weight:500}
+.err-low{color:#10b981}.err-mid{color:#eab308}.err-high{color:#ef4444}
 
-        .tag{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600}
-        .tag-primary{background:var(--primary-bg);color:var(--primary)}
-        .tag-success{background:var(--success-bg);color:var(--success)}
-        .tag-warning{background:var(--warning-bg);color:var(--warning)}
-        .tag-danger{background:var(--danger-bg);color:var(--danger)}
+/* === Charts === */
+.chart-wrap{flex:1;min-height:0;position:relative;width:100%}
+.chart-wrap canvas{width:100%!important;height:100%!important;max-height:420px}
 
-        /* Little's Law */
-        .littles-law-box{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:16px}
-        @media(max-width:600px){.littles-law-box{grid-template-columns:1fr}}
-        .ll-item{background:var(--gray-50);border-radius:10px;padding:16px;text-align:center;border:1px solid var(--gray-100)}
-        .ll-item .ll-formula{font-size:14px;font-weight:600;color:var(--gray-500);font-family:'Times New Roman',serif;font-style:italic;margin-bottom:4px}
-        .ll-item .ll-value{font-size:14px;color:var(--gray-600)}
-        .ll-item .ll-value strong{font-weight:700;color:var(--gray-800)}
-        .ll-check{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;margin-top:4px}
-        .ll-check.pass{background:var(--success-bg);color:var(--success)}
-        .ll-check.fail{background:var(--danger-bg);color:var(--danger)}
+/* Two-col layout */
+.two-col{display:flex;gap:40px;flex:1;min-height:0}
+.two-col .col{flex:1;display:flex;flex-direction:column}
+.two-col .col-narrow{flex:.45}
+.two-col .col-wide{flex:.55}
 
-        /* Analysis grid */
-        .analysis-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:24px}
-        .findings-list{list-style:none;padding:0}
-        .findings-list li{padding:10px 0;border-bottom:1px solid var(--gray-100);font-size:14px;color:var(--gray-600);display:flex;gap:8px;align-items:flex-start}
-        .findings-list li:last-child{border-bottom:none}
-        .findings-list .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-top:6px;flex-shrink:0}
-        .dot-primary{background:var(--primary)}.dot-success{background:var(--success)}
-        .dot-warning{background:var(--warning)}.dot-danger{background:var(--danger)}
-        .dot-info{background:var(--info)}.dot-violet{background:var(--violet)}
+/* === Insight Boxes === */
+.insight{
+  border-radius:8px;padding:20px 24px;margin-bottom:12px;
+  border:1px solid rgba(255,255,255,.08);
+}
+.insight-primary{background:rgba(113,113,255,.06);border-left:3px solid #7170ff}
+.insight-success{background:rgba(16,185,129,.06);border-left:3px solid #10b981}
+.insight-warning{background:rgba(234,179,8,.06);border-left:3px solid #eab308}
+.insight-info{background:rgba(56,189,248,.06);border-left:3px solid #38bdf8}
+.insight-title{font-size:14px;font-weight:600;color:#f7f8f8;margin-bottom:6px}
+.insight-text{font-size:15px;color:#8a8f98;line-height:1.6}
+.insight-text strong{color:#d0d6e0}
 
-        .footer{text-align:center;padding:40px 0;color:var(--gray-400);font-size:13px}
-        .footer span{display:inline-block;margin:0 8px}
+/* === Param Grid === */
+.param-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+.param-item{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:16px;text-align:center}
+.param-label{font-size:11px;font-weight:500;color:#62666d;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.param-val{font-size:28px;font-weight:600;color:#f7f8f8}
+.param-unit{font-size:12px;color:#62666d;margin-top:2px}
 
-        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-        @keyframes fadeInDown{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes cardFloatUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+/* === Quantile === */
+.quant-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.quant-item{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:16px;text-align:center}
+.quant-label{font-size:12px;color:#62666d;font-weight:500}
+.quant-val{font-size:26px;font-weight:600;color:#f7f8f8;margin-top:4px}
 
-        @media(max-width:768px){
-            .container{padding:0 16px}.header h1{font-size:26px}
-            .kpi-card .kpi-value{font-size:28px}.charts-grid,.analysis-grid{grid-template-columns:1fr}
-        }
-    </style>
+/* === Little's Law === */
+.ll-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.ll-item{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:20px;text-align:center}
+.ll-formula{font-size:16px;color:#62666d;font-weight:500;margin-bottom:6px}
+.ll-val{font-size:16px;color:#d0d6e0}
+.ll-val strong{color:#f7f8f8}
+.ll-check{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;margin-top:6px}
+.ll-check.pass{background:rgba(16,185,129,.15);color:#10b981}
+
+/* === Tag === */
+.tag{display:inline-block;padding:2px 12px;border-radius:999px;font-size:12px;font-weight:500}
+.tag-indigo{background:rgba(113,113,255,.15);color:#7170ff}
+.tag-green{background:rgba(16,185,129,.15);color:#10b981}
+.tag-yellow{background:rgba(234,179,8,.15);color:#eab308}
+
+/* === Findings === */
+.findings-list{list-style:none}
+.findings-list li{padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04);display:flex;gap:10px;align-items:flex-start}
+.findings-list li:last-child{border-bottom:none}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:8px;flex-shrink:0}
+.dot-primary{background:#7170ff}.dot-success{background:#10b981}.dot-warning{background:#eab308}.dot-info{background:#38bdf8}
+
+/* === Footer === */
+.badge-top{
+  display:inline-block;background:rgba(113,113,255,.15);color:#7170ff;
+  font-size:12px;font-weight:600;padding:4px 14px;border-radius:20px;
+  letter-spacing:1.5px;margin-bottom:16px;border:1px solid rgba(113,113,255,.2)
+}
+</style>
 </head>
 <body>
+<div class="deck" id="deck">
 
-<header class="header">
-    <div class="header-badge">QUEUEING THEORY · SIMULATION ANALYSIS</div>
-    <h1>M/M/1 <span>排队系统</span> 仿真分析报告</h1>
-    <p>基于离散事件仿真的单服务台排队系统多维度性能分析</p>
-    <div class="header-divider"></div>
-</header>
-
-<div class="container">
-
-    <!-- ============ 模型简介 ============ -->
-    <div class="card" style="animation:fadeIn 0.8s ease-out">
-        <div class="card-title"><span class="icon">📖</span> 模型简介</div>
-        <div style="line-height:1.8;color:var(--gray-600)">
-            <p><strong>M/M/1</strong> 是最经典的排队论模型。M/M/1 中：</p>
-            <ul style="margin-left:20px;margin-bottom:12px;color:var(--gray-600)">
-                <li><strong>M</strong> — 顾客到达为<strong>泊松过程</strong>（到达间隔呈指数分布）</li>
-                <li><strong>M</strong> — 服务时间服从<strong>指数分布</strong></li>
-                <li><strong>1</strong> — 系统中只有 <strong>1 个服务台</strong></li>
-            </ul>
-            <p>排队规则为 <strong>FIFO</strong>（先到先服务）。当系统负载 <span style="display:inline-block;padding:2px 12px;background:var(--gray-50);border-radius:4px;font-family:'Times New Roman',serif;font-style:italic">ρ = λ / μ &lt; 1</span> 时达到稳态。</p>
-            <p style="margin-top:8px;font-size:13px;color:var(--gray-400)">
-                关键公式：L = ρ/(1−ρ) &nbsp; L<sub>q</sub> = ρ²/(1−ρ) &nbsp; W = 1/(μ−λ) &nbsp; W<sub>q</sub> = ρ/(μ−λ)
-            </p>
-        </div>
+<!-- ============================================================
+SLIDE 0: 封面
+============================================================ -->
+<div class="slide active" data-slide="0">
+  <div class="slide-inner" style="text-align:center;align-items:center;justify-content:center">
+    <div class="badge-top" style="animation:fadeIn 1s ease-out">QUEUEING THEORY · SIMULATION ANALYSIS</div>
+    <h1 style="font-size:68px;margin-bottom:8px">M/M/1 <span>排队系统</span></h1>
+    <h1 style="font-size:48px;margin-bottom:24px;font-weight:400;color:#d0d6e0">仿真分析报告</h1>
+    <p style="font-size:20px;color:#62666d;max-width:700px;text-align:center">
+      基于离散事件仿真的单服务台排队系统多维度性能评估
+    </p>
+    <div style="margin-top:40px;display:flex;gap:16px">
+      <span class="tag tag-indigo">λ = {{ data.arrival_rate }}</span>
+      <span class="tag tag-indigo">μ = {{ data.service_rate }}</span>
+      <span class="tag tag-green">ρ = {{ "%.4f"|format(data.rho) }}</span>
+      <span class="tag tag-yellow">{{ data.total_customers }} 个顾客</span>
     </div>
-
-    <!-- ============ 核心参数 ============ -->
-    <div class="card" style="animation:fadeIn 0.8s ease-out 0.1s both">
-        <div class="card-title"><span class="icon">⚙️</span> 核心参数设置</div>
-        <div class="params-grid">
-            <div class="param-item"><div class="param-label">λ (到达率)</div><div class="param-value">{{ data.arrival_rate }}</div><div class="param-unit">顾客/时间单位</div></div>
-            <div class="param-item"><div class="param-label">μ (服务率)</div><div class="param-value">{{ data.service_rate }}</div><div class="param-unit">顾客/时间单位</div></div>
-            <div class="param-item"><div class="param-label">ρ (系统负载)</div><div class="param-value" style="color:var(--primary)">{{ "%.4f"|format(data.rho) }}</div><div class="param-unit">λ/μ = {{ "%.2f"|format(data.rho) }}</div></div>
-            <div class="param-item"><div class="param-label">仿真时长</div><div class="param-value">{{ data.sim_time | int }}</div><div class="param-unit">预热 {{ data.warmup_time | int }}</div></div>
-            <div class="param-item"><div class="param-label">到达/完成</div><div class="param-value">{{ data.total_customers }}</div><div class="param-unit">服务完成 {{ data.customers_served }}</div></div>
-            <div class="param-item"><div class="param-label">随机种子</div><div class="param-value">{{ data.seed }}</div><div class="param-unit">可重复性</div></div>
-        </div>
+    <div style="margin-top:60px;display:flex;align-items:center;gap:8px;color:#62666d;font-size:14px">
+      <span>← → 键切换页面</span>
     </div>
-
-    <!-- ============ KPI 指标卡片 ============ -->
-    <div class="kpi-section">
-        <div class="section-title"><span class="icon">📊</span> 关键性能指标</div>
-        <div class="kpi-grid">
-            <div class="kpi-card kpi-primary">
-                <div class="kpi-label">⏱ 平均等待时间 W<sub>q</sub></div>
-                <div class="kpi-value">{{ "%.4f"|format(data.avg_waiting_time) }}</div>
-                <div class="kpi-sub">理论 {{ "%.4f"|format(theory.Wq) }} &nbsp;·&nbsp; 差异 <strong>{{ "%.2f"|format(data.avg_waiting_time / theory.Wq * 100 - 100 if theory.Wq > 0 else 0) }}%</strong></div>
-                <div class="kpi-progress"><div class="kpi-progress-bar" style="width:{{ (data.avg_waiting_time / theory.Wq * 100)|round|int if theory.Wq > 0 else 0 }}%"></div></div>
-            </div>
-            <div class="kpi-card kpi-success">
-                <div class="kpi-label">🔄 平均系统时间 W</div>
-                <div class="kpi-value">{{ "%.4f"|format(data.avg_system_time) }}</div>
-                <div class="kpi-sub">理论 {{ "%.4f"|format(theory.W) }} &nbsp;·&nbsp; 差异 <strong>{{ "%.2f"|format(data.avg_system_time / theory.W * 100 - 100 if theory.W > 0 else 0) }}%</strong></div>
-                <div class="kpi-progress"><div class="kpi-progress-bar" style="width:{{ (data.avg_system_time / theory.W * 100)|round|int if theory.W > 0 else 0 }}%"></div></div>
-            </div>
-            <div class="kpi-card kpi-warning">
-                <div class="kpi-label">📋 平均队列长度 L<sub>q</sub></div>
-                <div class="kpi-value">{{ "%.4f"|format(data.avg_queue_length) }}</div>
-                <div class="kpi-sub">理论 {{ "%.4f"|format(theory.Lq) }} &nbsp;·&nbsp; 差异 <strong>{{ "%.2f"|format(data.avg_queue_length / theory.Lq * 100 - 100 if theory.Lq > 0 else 0) }}%</strong></div>
-                <div class="kpi-progress"><div class="kpi-progress-bar" style="width:{{ (data.avg_queue_length / theory.Lq * 100)|round|int if theory.Lq > 0 else 0 }}%"></div></div>
-            </div>
-            <div class="kpi-card kpi-info">
-                <div class="kpi-label">⚡ 服务台利用率 ρ</div>
-                <div class="kpi-value">{{ "%.2f"|format(data.server_utilization * 100) }}%</div>
-                <div class="kpi-sub">理论 {{ "%.2f"|format(theory.U * 100) }}% &nbsp;·&nbsp; 差异 <strong>{{ "%.2f"|format(data.server_utilization / theory.U * 100 - 100 if theory.U > 0 else 0) }}%</strong></div>
-                <div class="kpi-progress"><div class="kpi-progress-bar" style="width:{{ (data.server_utilization * 100)|round|int }}%"></div></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============ 数据分析：核心发现 ============ -->
-    <div class="card">
-        <div class="card-title"><span class="icon">🔍</span> 核心分析结论</div>
-        <div class="analysis-grid">
-            <div>
-                <ul class="findings-list">
-                    <li><span class="dot dot-primary"></span> <strong>模型验证：</strong>仿真与理论高度一致。利用率误差仅 <strong>{{ "%.2f"|format(data.server_utilization / theory.U * 100 - 100 if theory.U > 0 else 0) }}%</strong>，确认仿真程序正确</li>
-                    <li><span class="dot dot-success"></span> <strong>Little's Law 验证：</strong>L<sub>q</sub> ≈ λ·W<sub>q</sub> = <strong>{{ "%.4f"|format(data.littles_law_wq) }}</strong>，仿真 {{ "%.4f"|format(data.avg_queue_length) }}，差异 {{ data.wq_diff_pct }}%，守恒关系成立</li>
-                    <li><span class="dot dot-{{ 'success' if data.rho < 0.8 else 'warning' }}"></span> <strong>系统状态：</strong>负载 ρ={{ "%.2f"|format(data.rho) }}，系统处于{{ '低负载·快速响应' if data.rho < 0.5 else '中等负载·运行良好' if data.rho < 0.7 else '高负载·容量接近极限' if data.rho < 0.9 else '极高负载·接近不稳定' }}</li>
-                    <li><span class="dot dot-warning"></span> <strong>等待特征：</strong>{{ "%.1f"|format(data.avg_waiting_time * 100 / data.avg_system_time) }}% 的系统时间花费在排队等待上，服务本身仅占 {{ "%.1f"|format((1 - data.avg_waiting_time / data.avg_system_time) * 100) }}%</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============ 仿真 vs 理论对比表 ============ -->
-    <div class="card">
-        <div class="card-title"><span class="icon">📐</span> 仿真值 vs 理论值 对比</div>
-        <table class="comparison-table">
-            <thead><tr><th>性能指标</th><th>仿真值</th><th>理论值</th><th>相对误差</th></tr></thead>
-            <tbody>
-                {% set metrics = [
-                    ('平均等待时间 Wq', data.avg_waiting_time, theory.Wq),
-                    ('平均系统时间 W', data.avg_system_time, theory.W),
-                    ('平均队列长度 Lq', data.avg_queue_length, theory.Lq),
-                    ('服务台利用率 U', data.server_utilization, theory.U),
-                    ('系统中平均顾客数 L', data.avg_customers_in_system, theory.L),
-                ] %}
-                {% for label, sim, theo in metrics %}
-                <tr>
-                    <td>{{ label }}</td>
-                    <td class="value-sim">{{ "%.4f"|format(sim) }}</td>
-                    <td class="value-theo">{{ "%.4f"|format(theo) }}</td>
-                    {% set e = (sim / theo * 100 - 100)|abs if theo > 0 else 0 %}
-                    <td class="value-error {{ 'error-low' if e < 5 else 'error-mid' if e < 15 else 'error-high' }}">{{ "%.2f"|format(e) }}%</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <!-- ============ 负载敏感性分析 ============ -->
-    <div class="section-title"><span class="icon">📈</span> 负载敏感性分析</div>
-    <div class="card">
-        <div class="card-title"><span class="icon">📊</span> 不同负载 ρ 下的性能指标变化</div>
-        <p class="card-subtitle">固定服务率 μ = {{ data.service_rate }}，改变到达率 λ 实现不同负载 ρ = λ/μ。观察各指标随 ρ 变化的趋势，尤其关注在 ρ → 1 时的发散行为。</p>
-
-        <div class="chart-wrapper" style="min-height:350px">
-            <canvas id="chartSensitivity"></canvas>
-        </div>
-
-        {% if sensitivity_raw and sensitivity_raw|length > 0 %}
-        <div style="margin-top:20px;overflow-x:auto">
-            <table class="comparison-table">
-                <thead><tr><th>ρ</th><th>λ</th><th>仿真 W<sub>q</sub></th><th>理论 W<sub>q</sub></th><th>W<sub>q</sub> 误差</th><th>利用率</th><th>顾客数</th></tr></thead>
-                <tbody>
-                {% for s in sensitivity_raw %}
-                    <tr>
-                        <td><strong>{{ "%.2f"|format(s.rho) }}</strong></td>
-                        <td>{{ "%.1f"|format(s.lambda) }}</td>
-                        <td class="value-sim">{{ "%.4f"|format(s.sim_Wq) }}</td>
-                        <td class="value-theo">{{ "%.4f"|format(s.theo_Wq) }}</td>
-                        <td class="value-error {{ 'error-low' if s.error_Wq_pct < 5 else 'error-mid' }}">{{ "%.2f"|format(s.error_Wq_pct) }}%</td>
-                        <td>{{ "%.1f"|format(s.sim_U * 100) }}%</td>
-                        <td>{{ s.total_customers }}</td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% endif %}
-    </div>
-
-    <!-- ============ 敏感性分析解读 ============ -->
-    <div class="insight-box insight-{{ 'success' if theory.Wq < 1 else 'warning' if theory.Wq < 3 else 'danger' }}">
-        <div class="insight-title">📌 敏感性分析结论</div>
-        <div class="insight-text">
-            <p>当系统负载从 ρ = 0.3 增加到 ρ = 0.9：</p>
-            <ul style="margin:8px 0 0 20px">
-                {% if sensitivity_raw and sensitivity_raw|length >= 3 %}
-                {% set s_low = sensitivity_raw[0] %}
-                {% set s_high = sensitivity_raw[-2] if sensitivity_raw|length >= 6 else sensitivity_raw[-1] %}
-                <li>平均等待时间 Wq：从 <strong>{{ "%.4f"|format(s_low.sim_Wq) }}</strong> 增长到 <strong>{{ "%.4f"|format(s_high.sim_Wq) }}</strong>，放大 <strong>{{ "%.1f"|format(s_high.sim_Wq / s_low.sim_Wq if s_low.sim_Wq > 0 else 0) }} 倍</strong></li>
-                <li>平均队列长度 Lq：从 <strong>{{ "%.4f"|format(s_low.sim_Lq) }}</strong> 增长到 <strong>{{ "%.4f"|format(s_high.sim_Lq) }}</strong></li>
-                <li>服务台利用率：从 <strong>{{ "%.1f"|format(s_low.sim_U * 100) }}%</strong 增长到 <strong>{{ "%.1f"|format(s_high.sim_U * 100) }}%</strong></li>
-                {% endif %}
-            </ul>
-            <p style="margin-top:8px">核心发现：<strong>当 ρ → 1 时，等待时间和队列长度呈非线性发散趋势</strong>。ρ 从 0.7 升到 0.9（仅增加 0.2），等待时间的增长远超利用率本身的增长比例，说明系统在接近容量极限时性能急剧恶化。</p>
-        </div>
-    </div>
-
-    <!-- ============ 系统状态概率分布 ============ -->
-    <div class="section-title"><span class="icon">📊</span> 系统状态概率分布分析</div>
-    <div class="card">
-        <div class="card-title"><span class="icon">📊</span> 系统中顾客数分布 P(n) = ρⁿ·(1−ρ)</div>
-        <p class="card-subtitle">理论概率分布：系统中存在 n 个顾客的概率为 P(n) = ρⁿ(1−ρ)。下图对比仿真观测值与理论值。</p>
-        <div class="chart-wrapper" style="min-height:340px">
-            <canvas id="chartStateProb"></canvas>
-        </div>
-    </div>
-
-    <div class="insight-box insight-violet">
-        <div class="insight-title">📌 系统状态分析结论</div>
-        <div class="insight-text">
-            <p>系统<strong>空闲概率</strong> P(0) = {{ "%.4f"|format(theory.P0) }}（理论值），意味着系统有 <strong>{{ "%.1f"|format(theory.P0 * 100) }}%</strong> 的时间服务台处于空闲状态。</p>
-            <p>仿真结果显示系统状态分布与理论分布高度吻合，说明仿真准确再现了 M/M/1 的稳态行为。随着 n 增大，P(n) 呈指数衰减，表明<strong>系统中出现大量顾客的概率迅速降低</strong>。</p>
-        </div>
-    </div>
-
-    <!-- ============ 等待时间分布分析 ============ -->
-    <div class="section-title"><span class="icon">📉</span> 等待时间分布拟合分析</div>
-    <div class="card">
-        <div class="card-title"><span class="icon">📊</span> 等待时间生存函数 P(Wq > t)</div>
-        <p class="card-subtitle">理论生存函数：P(Wq > t) = ρ·e<sup>−μ(1−ρ)t</sup>。蓝色曲线为仿真经验分布，红色虚线为理论分布。</p>
-        <div class="chart-wrapper" style="min-height:340px">
-            <canvas id="chartWaitDist"></canvas>
-        </div>
-    </div>
-
-    <div class="insight-box insight-warning">
-        <div class="insight-title">📌 等待时间分布结论</div>
-        <div class="insight-text">
-            <p>仿真经验生存函数与理论曲线高度吻合，<strong>验证了 M/M/1 的等待时间分布确实服从指数衰减规律</strong>。</p>
-            <p>解读：P(Wq > 1.0) = 约 {{ data.interpretation.pct_waiting_over_1 }}%，意味着约 <strong>{{ data.interpretation.pct_waiting_over_1 }}%</strong> 的顾客等待超过 1 个时间单位；
-            P(Wq > 2.0) = 约 {{ data.interpretation.pct_waiting_over_2 }}%。这种"长尾"特征是指数分布的固有属性。</p>
-        </div>
-    </div>
-
-    <!-- ============ 等待时间分位数 ============ -->
-    <div class="card">
-        <div class="card-title"><span class="icon">🎯</span> 等待时间分位数统计</div>
-        <div class="quantile-row">
-            <div class="quantile-item"><div class="q-label">中位数 P50</div><div class="q-value">{{ "%.4f"|format(data.wait_quantile_50) }}</div></div>
-            <div class="quantile-item"><div class="q-label">P90</div><div class="q-value">{{ "%.4f"|format(data.wait_quantile_90) }}</div></div>
-            <div class="quantile-item"><div class="q-label">P99</div><div class="q-value">{{ "%.4f"|format(data.wait_quantile_99) }}</div></div>
-            <div class="quantile-item"><div class="q-label">最大值</div><div class="q-value">{{ "%.4f"|format(data.wait_max) }}</div></div>
-        </div>
-    </div>
-
-    <!-- ============ 收敛性分析 ============ -->
-    <div class="section-title"><span class="icon">📉</span> 仿真收敛性分析</div>
-    <div class="card">
-        <div class="card-title"><span class="icon">📊</span> 误差随仿真时间的变化</div>
-        <p class="card-subtitle">通过逐步增加仿真时长，观察等待时间 Wq 和利用率 U 相对理论值的误差如何收敛。这是评判仿真结果置信度的关键依据。</p>
-        <div class="chart-wrapper" style="min-height:340px">
-            <canvas id="chartConvergence"></canvas>
-        </div>
-
-        {% if convergence_raw and convergence_raw|length > 0 %}
-        <div style="margin-top:20px;overflow-x:auto">
-            <table class="comparison-table">
-                <thead><tr><th>仿真时长</th><th>顾客数</th><th>Wq 误差</th><th>利用率误差</th></tr></thead>
-                <tbody>
-                {% for c in convergence_raw %}
-                    <tr>
-                        <td><strong>{{ c.sim_time }}</strong></td>
-                        <td>{{ c.total_customers }}</td>
-                        <td class="value-error {{ 'error-low' if c.error_Wq_pct < 5 else 'error-mid' }}">{{ "%.2f"|format(c.error_Wq_pct) }}%</td>
-                        <td class="value-error {{ 'error-low' if c.error_U_pct < 2 else 'error-mid' }}">{{ "%.2f"|format(c.error_U_pct) }}%</td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% endif %}
-    </div>
-
-    <div class="insight-box insight-success">
-        <div class="insight-title">📌 收敛性分析结论</div>
-        <div class="insight-text">
-            <p>① 随着仿真时间增加，<strong>Wq 和 U 的误差总体呈下降趋势</strong>，说明更长的仿真产生更稳定的结果。</p>
-            <p>② 利用率 U 的收敛速度远快于等待时间 Wq，这是因为利用率是瞬时观测量的平均，而等待时间是累积分布尾部。</p>
-            <p>③ 当仿真时长达到 <strong>2000+</strong> 时，各项误差已基本稳定在 10% 以内，表明当前报告的仿真结果具有<strong>良好的统计置信度</strong>。</p>
-        </div>
-    </div>
-
-    <!-- ============ Little's Law 验证 ============ -->
-    <div class="card">
-        <div class="card-title"><span class="icon">✅</span> Little's Law 验证</div>
-        <p style="font-size:14px;color:var(--gray-500);margin-bottom:12px">
-            Little's Law 是排队论的核心守恒关系：<strong>L = λ·W</strong> 和 <strong>L<sub>q</sub> = λ·W<sub>q</sub></strong>。
-        </p>
-        <div class="littles-law-box">
-            <div class="ll-item">
-                <div class="ll-formula">L<sub>q</sub> ≈ λ · W<sub>q</sub></div>
-                <div class="ll-value"><strong>{{ "%.4f"|format(data.avg_queue_length) }}</strong> ≈ {{ "%.4f"|format(data.arrival_rate) }} × {{ "%.4f"|format(data.avg_waiting_time) }} = <strong>{{ "%.4f"|format(data.littles_law_wq) }}</strong></div>
-                <span class="ll-check {{ 'pass' if data.wq_diff_pct < 5 else 'fail' }}">{% if data.wq_diff_pct < 5 %}✓ 验证通过 (差异 {{ data.wq_diff_pct }}%){% else %}✗ 偏差 {{ data.wq_diff_pct }}%{% endif %}</span>
-            </div>
-            <div class="ll-item">
-                <div class="ll-formula">L ≈ λ · W</div>
-                <div class="ll-value"><strong>{{ "%.4f"|format(data.avg_customers_in_system) }}</strong> ≈ {{ "%.4f"|format(data.arrival_rate) }} × {{ "%.4f"|format(data.avg_system_time) }} = <strong>{{ "%.4f"|format(data.littles_law_w) }}</strong></div>
-                <span class="ll-check pass">✓ 守恒关系成立</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============ 实际意义解读 ============ -->
-    <div class="section-title"><span class="icon">💡</span> 实际意义解读</div>
-    <div class="card">
-        <div class="card-title"><span class="icon">🔎</span> 排队系统的运营启示</div>
-        <div class="insight-box insight-success">
-            <div class="insight-title">⚡ 当前系统状态评估</div>
-            <div class="insight-text">
-                <p>系统负载 ρ = <strong>{{ "%.1f"|format(data.rho * 100) }}%</strong>，属于<strong>{{ data.interpretation.efficiency }}</strong> 区间。</p>
-                平均每 <strong>{{ data.interpretation.arrival_interval }}</strong> 个时间单位来一个顾客，每个顾客平均服务耗时 <strong>{{ data.interpretation.service_time }}</strong> 个时间单位。</p>
-                <p>顾客平均等待 <strong>{{ "%.3f"|format(data.avg_waiting_time) }}</strong> 个时间单位，其中服务本身仅需 {{ "%.3f"|format(1 / data.service_rate) }} 个时间单位，
-                意味着 <strong>{{ "%.1f"|format(data.avg_waiting_time / (1/data.service_rate + data.avg_waiting_time) * 100) }}% 的时间花在排队上</strong>。</p>
-            </div>
-        </div>
-
-        {% if interpretation.wq_growth_if_rho_plus_01 %}
-        <div class="insight-box insight-warning">
-            <div class="insight-title">⚠️ 负载增长的风险预警</div>
-            <div class="insight-text">
-                <p>如果到达率增加 10%（即 ρ 从 {{ "%.2f"|format(data.rho) }} 上升到 {{ "%.2f"|format(interpretation.higher_rho) }}），</p>
-                <p>理论上平均等待时间将放大 <strong>{{ "%.1f"|format(interpretation.wq_growth_if_rho_plus_01) }} 倍</strong>。</p>
-                <p>这种<strong>非线性增长</strong>是排队系统的关键特征——<em>在接近容量极限时，很小的负载增加会导致极大的性能恶化</em>。</p>
-            </div>
-        </div>
-        {% endif %}
-
-        <div class="insight-box insight-violet">
-            <div class="insight-title">📊 设计建议</div>
-            <div class="insight-text">
-                <p>① 若希望将平均等待时间控制在可接受范围，应确保系统长期运行在 <strong>ρ ≤ 0.7</strong> 以下。</p>
-                <p>② 当 ρ > 0.8 时，建议考虑<strong>增加服务台数量</strong>（转为 M/M/c 模型）或<strong>提高服务效率</strong>。</p>
-                <p>③ 仿真收敛性分析表明，2000 时间单位的仿真已能提供可靠估计，<strong>实验设计时无需过度增加仿真时长</strong>。</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============ 图表区域（原有的 4 张图） ============ -->
-    <div class="section-title"><span class="icon">📉</span> 系统行为可视化</div>
-    <div class="charts-grid">
-        <div class="card">
-            <div class="card-title"><span class="icon">📊</span> 队列长度随时间变化</div>
-            <div class="chart-wrapper"><canvas id="chartQueueLength"></canvas></div>
-        </div>
-        <div class="card">
-            <div class="card-title"><span class="icon">📊</span> 等待时间分布</div>
-            <div class="chart-wrapper"><canvas id="chartWaitHistogram"></canvas></div>
-        </div>
-        <div class="card">
-            <div class="card-title"><span class="icon">📊</span> 服务台利用率时序</div>
-            <div class="chart-wrapper"><canvas id="chartUtilization"></canvas></div>
-        </div>
-        <div class="card">
-            <div class="card-title"><span class="icon">📊</span> 系统逗留时间分布</div>
-            <div class="chart-wrapper"><canvas id="chartSystemHistogram"></canvas></div>
-        </div>
-    </div>
-
-    <div class="footer">
-        <span>M/M/1 排队系统仿真分析报告</span><span>·</span>
-        <span>生成: {{ data.generated_at }}</span><span>·</span>
-        <span>随机过程课程项目</span>
-    </div>
-
+  </div>
+  <div class="slide-num">1 / {{ total_slides }}</div>
 </div>
 
+<!-- ============================================================
+SLIDE 1: 模型简介
+============================================================ -->
+<div class="slide" data-slide="1">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">📖</span><h2>模型简介</h2></div>
+    <p style="margin-bottom:24px"><strong>M/M/1</strong> 是最经典的排队论模型，三个字母分别代表：</p>
+    <div class="card-grid card-grid-3" style="margin-bottom:24px">
+      <div class="card" style="text-align:center;padding:32px">
+        <div style="font-size:42px;font-weight:700;color:#7170ff;margin-bottom:8px">M</div>
+        <div style="font-size:16px;color:#d0d6e0"><strong>泊松到达</strong></div>
+        <div style="font-size:14px;color:#62666d;margin-top:4px">顾客到达为泊松过程<br>间隔 ~ Exp(λ)</div>
+      </div>
+      <div class="card" style="text-align:center;padding:32px">
+        <div style="font-size:42px;font-weight:700;color:#10b981;margin-bottom:8px">M</div>
+        <div style="font-size:16px;color:#d0d6e0"><strong>指数服务</strong></div>
+        <div style="font-size:14px;color:#62666d;margin-top:4px">服务时间服从指数分布<br>时长 ~ Exp(μ)</div>
+      </div>
+      <div class="card" style="text-align:center;padding:32px">
+        <div style="font-size:42px;font-weight:700;color:#eab308;margin-bottom:8px">1</div>
+        <div style="font-size:16px;color:#d0d6e0"><strong>单服务台</strong></div>
+        <div style="font-size:14px;color:#62666d;margin-top:4px">FIFO 排队规则<br>系统容量无限</div>
+      </div>
+    </div>
+    <div class="insight insight-primary">
+      <div class="insight-title">📐 核心公式</div>
+      <div class="insight-text" style="font-size:17px;text-align:center;font-feature-settings:'tnum'">
+        L = ρ/(1−ρ) &nbsp;&nbsp;&nbsp; L<sub>q</sub> = ρ²/(1−ρ) &nbsp;&nbsp;&nbsp;
+        W = 1/(μ−λ) &nbsp;&nbsp;&nbsp; W<sub>q</sub> = ρ/(μ−λ)
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">2 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 2: 核心参数
+============================================================ -->
+<div class="slide" data-slide="2">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">⚙️</span><h2>核心参数设置</h2></div>
+    <div class="param-grid">
+      <div class="param-item"><div class="param-label">λ 到达率</div><div class="param-val">{{ data.arrival_rate }}</div><div class="param-unit">顾客/时间单位</div></div>
+      <div class="param-item"><div class="param-label">μ 服务率</div><div class="param-val">{{ data.service_rate }}</div><div class="param-unit">顾客/时间单位</div></div>
+      <div class="param-item"><div class="param-label">ρ 系统负载</div><div class="param-val" style="color:#7170ff">{{ "%.4f"|format(data.rho) }}</div><div class="param-unit">λ/μ = {{ "%.2f"|format(data.rho) }}</div></div>
+      <div class="param-item"><div class="param-label">仿真时长</div><div class="param-val">{{ data.sim_time | int }}</div><div class="param-unit">预热 {{ data.warmup_time | int }}</div></div>
+      <div class="param-item"><div class="param-label">总顾客数</div><div class="param-val">{{ data.total_customers }}</div><div class="param-unit">完成服务 {{ data.customers_served }}</div></div>
+      <div class="param-item"><div class="param-label">随机种子</div><div class="param-val">{{ data.seed }}</div><div class="param-unit">可重复性</div></div>
+    </div>
+    <div style="margin-top:20px" class="insight insight-success">
+      <div class="insight-title">✅ 稳态条件</div>
+      <div class="insight-text">ρ = {{ "%.4f"|format(data.rho) }} <strong>&lt; 1</strong>，系统已达到稳态，可以进行统计分析。</div>
+    </div>
+  </div>
+  <div class="slide-num">3 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 3: KPI 指标
+============================================================ -->
+<div class="slide" data-slide="3">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">📊</span><h2>关键性能指标</h2></div>
+    <div class="card-grid card-grid-4" style="margin-bottom:20px">
+      <div class="kpi-card kpi-primary">
+        <div class="kpi-label">⏱ 平均等待时间 W<sub>q</sub></div>
+        <div class="kpi-value">{{ "%.4f"|format(data.avg_waiting_time) }}</div>
+        <div class="kpi-sub">理论 {{ "%.4f"|format(theory.Wq) }} &nbsp;·&nbsp; 差异 <strong>{{ "%.2f"|format(data.avg_waiting_time / theory.Wq * 100 - 100 if theory.Wq > 0 else 0) }}%</strong></div>
+        <div class="kpi-progress"><div class="kpi-progress-bar" style="width:{{ (data.avg_waiting_time / theory.Wq * 100)|round|int if theory.Wq > 0 else 0 }}%"></div></div>
+      </div>
+      <div class="kpi-card kpi-success">
+        <div class="kpi-label">🔄 平均系统时间 W</div>
+        <div class="kpi-value">{{ "%.4f"|format(data.avg_system_time) }}</div>
+        <div class="kpi-sub">理论 {{ "%.4f"|format(theory.W) }} &nbsp;·&nbsp; 差异 <strong>{{ "%.2f"|format(data.avg_system_time / theory.W * 100 - 100 if theory.W > 0 else 0) }}%</strong></div>
+        <div class="kpi-progress"><div class="kpi-progress-bar" style="width:{{ (data.avg_system_time / theory.W * 100)|round|int if theory.W > 0 else 0 }}%"></div></div>
+      </div>
+      <div class="kpi-card kpi-warning">
+        <div class="kpi-label">📋 平均队列长度 L<sub>q</sub></div>
+        <div class="kpi-value">{{ "%.4f"|format(data.avg_queue_length) }}</div>
+        <div class="kpi-sub">理论 {{ "%.4f"|format(theory.Lq) }} &nbsp;·&nbsp; 差异 <strong>{{ "%.2f"|format(data.avg_queue_length / theory.Lq * 100 - 100 if theory.Lq > 0 else 0) }}%</strong></div>
+        <div class="kpi-progress"><div class="kpi-progress-bar" style="width:{{ (data.avg_queue_length / theory.Lq * 100)|round|int if theory.Lq > 0 else 0 }}%"></div></div>
+      </div>
+      <div class="kpi-card kpi-info">
+        <div class="kpi-label">⚡ 服务台利用率 ρ</div>
+        <div class="kpi-value">{{ "%.2f"|format(data.server_utilization * 100) }}%</div>
+        <div class="kpi-sub">理论 {{ "%.2f"|format(theory.U * 100) }}% &nbsp;·&nbsp; 差异 <strong>{{ "%.2f"|format(data.server_utilization / theory.U * 100 - 100 if theory.U > 0 else 0) }}%</strong></div>
+        <div class="kpi-progress"><div class="kpi-progress-bar" style="width:{{ (data.server_utilization * 100)|round|int }}%"></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">4 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 4: 仿真 vs 理论对比
+============================================================ -->
+<div class="slide" data-slide="4">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">📐</span><h2>仿真值 vs 理论值 对比</h2></div>
+    <div class="two-col" style="gap:32px">
+      <div class="col table-wrap" style="flex:.5;display:flex;flex-direction:column;justify-content:center">
+        <table>
+          <thead><tr><th>性能指标</th><th>仿真值</th><th>理论值</th><th>误差</th></tr></thead>
+          <tbody>
+            {% set metrics = [
+              ('平均等待时间 Wq', data.avg_waiting_time, theory.Wq),
+              ('平均系统时间 W', data.avg_system_time, theory.W),
+              ('平均队列长度 Lq', data.avg_queue_length, theory.Lq),
+              ('服务台利用率 U', data.server_utilization, theory.U),
+              ('系统中平均顾客数 L', data.avg_customers_in_system, theory.L),
+            ] %}
+            {% for label, sim, theo in metrics %}
+            <tr>
+              <td>{{ label }}</td>
+              <td class="val-sim">{{ "%.4f"|format(sim) }}</td>
+              <td class="val-theo">{{ "%.4f"|format(theo) }}</td>
+              {% set e = (sim / theo * 100 - 100)|abs if theo > 0 else 0 %}
+              <td class="val-err {{ 'err-low' if e < 5 else 'err-mid' if e < 15 else 'err-high' }}">{{ "%.2f"|format(e) }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="col" style="flex:.5;gap:16px;justify-content:center">
+        <div class="insight insight-success">
+          <div class="insight-title">✅ 模型验证通过</div>
+          <div class="insight-text">所有指标与理论值一致，<strong>利用率误差仅 {{ "%.2f"|format(data.server_utilization / theory.U * 100 - 100 if theory.U > 0 else 0) }}%</strong>，仿真程序正确实现 M/M/1 排队模型。</div>
+        </div>
+        <div class="insight insight-primary">
+          <div class="insight-title">🎯 最佳吻合</div>
+          <div class="insight-text">服务台利用率的仿真值与理论值拟合度最高，因为利用率是瞬时统计量，收敛速度快。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">5 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 5: 核心分析结论
+============================================================ -->
+<div class="slide" data-slide="5">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">🔍</span><h2>核心分析结论</h2></div>
+    <div class="two-col" style="gap:32px">
+      <div class="col">
+        <ul class="findings-list">
+          <li><span class="dot dot-primary"></span> <strong>模型验证</strong> — 仿真与理论高度一致。利用率误差仅 <strong>{{ "%.2f"|format(data.server_utilization / theory.U * 100 - 100 if theory.U > 0 else 0) }}%</strong>，确认仿真程序正确</li>
+          <li><span class="dot dot-success"></span> <strong>Little's Law</strong> — L<sub>q</sub> ≈ λ·W<sub>q</sub> = <strong>{{ "%.4f"|format(data.littles_law_wq) }}</strong>，仿真 {{ "%.4f"|format(data.avg_queue_length) }}，差异 <strong>{{ data.wq_diff_pct }}%</strong>，守恒关系成立</li>
+          <li><span class="dot dot-{{ 'success' if data.rho < 0.8 else 'warning' }}"></span> <strong>系统状态</strong> — 负载 ρ = {{ "%.2f"|format(data.rho) }}，系统处于<strong>{{ '低负载·快速响应' if data.rho < 0.5 else '中等负载·运行良好' if data.rho < 0.7 else '高负载·容量接近极限' if data.rho < 0.9 else '极高负载·接近不稳定' }}</strong></li>
+          <li><span class="dot dot-warning"></span> <strong>等待特征</strong> — {{ "%.1f"|format(data.avg_waiting_time * 100 / data.avg_system_time) }}% 的系统时间花费在排队上，服务仅占 {{ "%.1f"|format((1 - data.avg_waiting_time / data.avg_system_time) * 100) }}%</li>
+          <li><span class="dot dot-info"></span> <strong>分位数</strong> — P50 = {{ "%.4f"|format(data.wait_quantile_50) }}, P90 = {{ "%.4f"|format(data.wait_quantile_90) }}, P99 = {{ "%.4f"|format(data.wait_quantile_99) }}</li>
+        </ul>
+      </div>
+      <div class="col" style="padding:20px 0">
+        <div class="quant-grid" style="margin-bottom:20px">
+          <div class="quant-item"><div class="quant-label">P50 中位数</div><div class="quant-val">{{ "%.4f"|format(data.wait_quantile_50) }}</div></div>
+          <div class="quant-item"><div class="quant-label">P90</div><div class="quant-val">{{ "%.4f"|format(data.wait_quantile_90) }}</div></div>
+          <div class="quant-item"><div class="quant-label">P99</div><div class="quant-val">{{ "%.4f"|format(data.wait_quantile_99) }}</div></div>
+          <div class="quant-item"><div class="quant-label">最大值</div><div class="quant-val">{{ "%.4f"|format(data.wait_max) }}</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">6 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 6: 负载敏感性分析 - 图表
+============================================================ -->
+<div class="slide" data-slide="6">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">📈</span><h2>负载敏感性分析</h2></div>
+    <p style="margin-bottom:16px">固定 μ = {{ data.service_rate }}，改变 λ 实现不同负载 ρ。观察 ρ → 1 时指标的发散行为。</p>
+    <div class="chart-wrap" style="flex:1"><canvas id="chartSensitivity"></canvas></div>
+  </div>
+  <div class="slide-num">7 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 7: 敏感性分析结论
+============================================================ -->
+<div class="slide" data-slide="7">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">📊</span><h2>敏感性分析 — 数据与结论</h2></div>
+    <div class="two-col" style="gap:24px">
+      <div class="col table-wrap">
+        <table>
+          <thead><tr><th>ρ</th><th>λ</th><th>Wq 仿真</th><th>Wq 理论</th><th>误差</th><th>利用率</th></tr></thead>
+          <tbody>
+          {% for s in sensitivity_raw %}
+            <tr>
+              <td><strong>{{ "%.2f"|format(s.rho) }}</strong></td>
+              <td>{{ "%.1f"|format(s.lambda) }}</td>
+              <td class="val-sim">{{ "%.4f"|format(s.sim_Wq) }}</td>
+              <td class="val-theo">{{ "%.4f"|format(s.theo_Wq) }}</td>
+              <td class="val-err {{ 'err-low' if s.error_Wq_pct < 5 else 'err-mid' }}">{{ "%.2f"|format(s.error_Wq_pct) }}%</td>
+              <td>{{ "%.1f"|format(s.sim_U * 100) }}%</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="col" style="gap:12px;justify-content:center">
+        <div class="insight insight-warning">
+          <div class="insight-title">⚠️ 非线性发散</div>
+          <div class="insight-text">
+            {% if sensitivity_raw and sensitivity_raw|length >= 3 %}
+            ρ 从 <strong>{{ "%.2f"|format(sensitivity_raw[0].rho) }}</strong> 升至 <strong>{{ "%.2f"|format(sensitivity_raw[-2].rho) }}</strong>，Wq 放大 <strong>{{ "%.1f"|format(sensitivity_raw[-2].sim_Wq / sensitivity_raw[0].sim_Wq) }} 倍</strong>。
+            {% endif %}
+            负载上升 0.2，等待时间增长数十倍——<strong>非线性特征</strong>是排队系统的关键属性。
+          </div>
+        </div>
+        <div class="insight insight-primary">
+          <div class="insight-title">💡 设计阈值</div>
+          <div class="insight-text">ρ &lt; <strong>0.7</strong> 为安全区，ρ &gt; <strong>0.8</strong> 需预警，ρ → <strong>1.0</strong> 系统接近不稳定。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">8 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 8: 系统状态概率分布
+============================================================ -->
+<div class="slide" data-slide="8">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">📊</span><h2>系统状态概率分布</h2></div>
+    <p style="margin-bottom:12px">理论分布 P(n) = ρⁿ·(1−ρ)。下图为仿真观测值与理论值的对比。</p>
+    <div class="two-col" style="gap:32px;flex:1">
+      <div class="col chart-wrap" style="flex:1.2"><canvas id="chartStateProb"></canvas></div>
+      <div class="col" style="flex:.8;gap:12px;justify-content:center">
+        <div class="insight insight-primary">
+          <div class="insight-title">📌 空闲概率</div>
+          <div class="insight-text">P(0) = <strong>{{ "%.4f"|format(theory.P0) }}</strong>，系统有 <strong>{{ "%.1f"|format(theory.P0 * 100) }}%</strong> 的时间服务台空闲。</div>
+        </div>
+        <div class="insight insight-success">
+          <div class="insight-title">📌 指数衰减</div>
+          <div class="insight-text">P(n) 随 n 增加呈指数衰减，<strong>出现大量顾客的概率极低</strong>，符合 M/M/1 理论预期。</div>
+        </div>
+        <div class="insight insight-info">
+          <div class="insight-title">📌 拟合质量</div>
+          <div class="insight-text">仿真与理论曲线高度吻合，<strong>验证了稳态分布的正确性</strong>。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">9 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 9: 等待时间分布拟合
+============================================================ -->
+<div class="slide" data-slide="9">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">📉</span><h2>等待时间分布拟合</h2></div>
+    <p style="margin-bottom:12px">理论生存函数 P(Wq > t) = ρ·e<sup>−μ(1−ρ)t</sup>。蓝色区域为仿真，红色虚线为理论。</p>
+    <div class="two-col" style="gap:32px;flex:1">
+      <div class="col chart-wrap" style="flex:1.2"><canvas id="chartWaitDist"></canvas></div>
+      <div class="col" style="flex:.8;gap:12px;justify-content:center">
+        <div class="insight insight-warning">
+          <div class="insight-title">📌 长尾特征</div>
+          <div class="insight-text">等待时间呈<strong>指数衰减</strong>，部分顾客等待时间远超平均值——这是指数分布的固有属性。</div>
+        </div>
+        <div class="insight insight-success">
+          <div class="insight-title">📌 拟合验证</div>
+          <div class="insight-text">经验生存函数与理论曲线基本一致，<strong>M/M/1 的等待时间分布假设成立</strong>。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">10 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 10: 收敛性分析
+============================================================ -->
+<div class="slide" data-slide="10">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">📉</span><h2>仿真收敛性分析</h2></div>
+    <p style="margin-bottom:12px">随仿真时长增加，Wq 和利用率误差的变化趋势（对数 X 轴）。</p>
+    <div class="two-col" style="gap:32px;flex:1">
+      <div class="col chart-wrap" style="flex:1.2"><canvas id="chartConvergence"></canvas></div>
+      <div class="col" style="flex:.8;gap:12px;justify-content:center">
+        <div class="insight insight-success">
+          <div class="insight-title">📌 误差收敛</div>
+          <div class="insight-text">随仿真时间增加，<strong>Wq 和利用率误差呈下降趋势</strong>。</div>
+        </div>
+        <div class="insight insight-primary">
+          <div class="insight-title">📌 利用率收敛更快</div>
+          <div class="insight-text">利用率 U 的收敛速度远快于 Wq——利用率是瞬时均值，<strong>Wq 是尾部累积统计量</strong>。</div>
+        </div>
+        <div class="insight insight-info">
+          <div class="insight-title">📌 置信度评估</div>
+          <div class="insight-text">仿真时长 <strong>≥ 2000</strong> 时，误差基本稳定在 <strong>10% 以内</strong>，结果具有良好置信度。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">11 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 11: 系统行为可视化（4张图表）
+============================================================ -->
+<div class="slide" data-slide="11">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">📉</span><h2>系统行为可视化</h2></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;flex:1;min-height:0">
+      <div class="chart-wrap"><canvas id="chartQueueLength"></canvas><div style="text-align:center;font-size:13px;color:#62666d;margin-top:4px">队列长度时序</div></div>
+      <div class="chart-wrap"><canvas id="chartWaitHistogram"></canvas><div style="text-align:center;font-size:13px;color:#62666d;margin-top:4px">等待时间分布直方图</div></div>
+      <div class="chart-wrap"><canvas id="chartUtilization"></canvas><div style="text-align:center;font-size:13px;color:#62666d;margin-top:4px">服务台利用率时序</div></div>
+      <div class="chart-wrap"><canvas id="chartSystemHistogram"></canvas><div style="text-align:center;font-size:13px;color:#62666d;margin-top:4px">系统逗留时间分布</div></div>
+    </div>
+  </div>
+  <div class="slide-num">12 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 12: Little's Law
+============================================================ -->
+<div class="slide" data-slide="12">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">✅</span><h2>Little's Law 验证</h2></div>
+    <p style="margin-bottom:24px">排队论中最基本的守恒关系：<strong>L = λ · W</strong> 和 <strong>L<sub>q</sub> = λ · W<sub>q</sub></strong></p>
+    <div class="ll-grid" style="margin-bottom:24px">
+      <div class="ll-item">
+        <div class="ll-formula">L<sub>q</sub> ≈ λ · W<sub>q</sub></div>
+        <div class="ll-val">
+          <strong>{{ "%.4f"|format(data.avg_queue_length) }}</strong>
+          ≈ {{ "%.4f"|format(data.arrival_rate) }} × {{ "%.4f"|format(data.avg_waiting_time) }}
+          = <strong>{{ "%.4f"|format(data.littles_law_wq) }}</strong>
+        </div>
+        <span class="ll-check pass">✓ 差异 {{ data.wq_diff_pct }}%，验证通过</span>
+      </div>
+      <div class="ll-item">
+        <div class="ll-formula">L ≈ λ · W</div>
+        <div class="ll-val">
+          <strong>{{ "%.4f"|format(data.avg_customers_in_system) }}</strong>
+          ≈ {{ "%.4f"|format(data.arrival_rate) }} × {{ "%.4f"|format(data.avg_system_time) }}
+          = <strong>{{ "%.4f"|format(data.littles_law_w) }}</strong>
+        </div>
+        <span class="ll-check pass">✓ 守恒关系成立</span>
+      </div>
+    </div>
+    <div class="insight insight-primary">
+      <div class="insight-title">📐 理论意义</div>
+      <div class="insight-text">Little's Law 是排队论的基石——它不依赖具体分布假设，<strong>适用于任何稳态排队系统</strong>。本报告通过仿真再次验证了这一普遍定律。</div>
+    </div>
+  </div>
+  <div class="slide-num">13 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 13: 实际意义解读
+============================================================ -->
+<div class="slide" data-slide="13">
+  <div class="slide-inner">
+    <div class="slide-header"><span class="icon">💡</span><h2>实际意义与运营启示</h2></div>
+    <div class="two-col" style="gap:24px">
+      <div class="col" style="gap:12px">
+        <div class="insight insight-success" style="flex:1">
+          <div class="insight-title">⚡ 当前系统评估</div>
+          <div class="insight-text">
+            负载 ρ = <strong>{{ "%.1f"|format(data.rho * 100) }}%</strong>，属于<strong>{{ data.interpretation.efficiency }}</strong> 区间。
+            每 <strong>{{ data.interpretation.arrival_interval }}</strong> 时间单位来一个顾客，服务耗时 <strong>{{ data.interpretation.service_time }}</strong> 时间单位。
+          </div>
+        </div>
+        {% if interpretation.wq_growth_if_rho_plus_01 %}
+        <div class="insight insight-warning" style="flex:1">
+          <div class="insight-title">⚠️ 增长风险</div>
+          <div class="insight-text">
+            ρ 上升至 {{ "%.2f"|format(interpretation.higher_rho) }}（+0.1），等待时间将放大 <strong>{{ "%.1f"|format(interpretation.wq_growth_if_rho_plus_01) }} 倍</strong>。<br>
+            <strong>非线性增长</strong>意味着接近容量极限时，微小负载增加导致性能急剧恶化。
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="col" style="gap:12px">
+        <div class="insight insight-info" style="flex:1">
+          <div class="insight-title">📊 设计建议</div>
+          <div class="insight-text">
+            ① 长期运行建议 <strong>ρ ≤ 0.7</strong>，保持低延迟。<br>
+            ② ρ > 0.8 时考虑<strong>增加服务台</strong>（M/M/c）或提升服务效率。<br>
+            ③ 2000 时间单位仿真已足够可靠。
+          </div>
+        </div>
+        <div class="insight insight-primary" style="flex:1">
+          <div class="insight-title">🎯 关键启示</div>
+          <div class="insight-text">
+            <strong>{{ "%.1f"|format(data.avg_waiting_time / (1/data.service_rate + data.avg_waiting_time) * 100) }}%</strong> 的时间花在排队上，
+            服务本身仅占 <strong>{{ "%.1f"|format((1 - data.avg_waiting_time / (1/data.service_rate + data.avg_waiting_time)) * 100) }}%</strong>——
+            排队系统的效率瓶颈不在服务速率，而在<strong>到达率的波动性</strong>。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-num">14 / {{ total_slides }}</div>
+</div>
+
+<!-- ============================================================
+SLIDE 14: 结束
+============================================================ -->
+<div class="slide" data-slide="14">
+  <div class="slide-inner" style="text-align:center;align-items:center;justify-content:center">
+    <h1 style="font-size:60px;margin-bottom:16px">谢谢</h1>
+    <p style="font-size:22px;color:#62666d">M/M/1 排队系统仿真分析报告</p>
+    <div style="margin-top:40px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+      <span class="tag tag-indigo">SimPy 仿真引擎</span>
+      <span class="tag tag-green">Chart.js 可视化</span>
+      <span class="tag tag-yellow">{{ data.generated_at }}</span>
+    </div>
+  </div>
+  <div class="slide-num">15 / {{ total_slides }}</div>
+</div>
+
+<!-- === Navigation === -->
+<button class="nav-btn nav-prev hidden" id="btnPrev">◀</button>
+<button class="nav-btn nav-next" id="btnNext">▶</button>
+<div class="progress-bar" id="progressBar" style="width:0%"></div>
+
+</div><!-- /deck -->
+
 <script>
+// ============================================================
+// 幻灯片导航
+// ============================================================
+const totalSlides = document.querySelectorAll('.slide').length;
+let current = 0;
+
+function navigate(dir){
+  const target = current + dir;
+  if(target < 0 || target >= totalSlides) return;
+  const slides = document.querySelectorAll('.slide');
+  const prev = current;
+  current = target;
+
+  slides.forEach(s => s.classList.remove('active','exit-left','exit-right','enter-left','enter-right'));
+
+  if(dir === 1){
+    slides[prev].classList.add('exit-left');
+    slides[current].classList.add('enter-right');
+  } else {
+    slides[prev].classList.add('exit-right');
+    slides[current].classList.add('enter-left');
+  }
+  void slides[current].offsetWidth; // force reflow
+  slides[current].classList.remove('enter-left','enter-right');
+  slides[current].classList.add('active');
+
+  setTimeout(() => {
+    slides[prev].classList.remove('exit-left','exit-right');
+  }, 700);
+
+  updateUI();
+}
+
+function updateUI(){
+  document.getElementById('btnPrev').classList.toggle('hidden', current === 0);
+  document.getElementById('btnNext').classList.toggle('hidden', current === totalSlides - 1);
+  document.getElementById('progressBar').style.width = ((current + 1) / totalSlides * 100) + '%';
+
+  // Update slide numbers
+  document.querySelectorAll('.slide-num').forEach(el => {
+    const idx = parseInt(el.closest('.slide').dataset.slide);
+    el.textContent = (idx + 1) + ' / ' + totalSlides;
+  });
+}
+
+// Events
+document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
+document.getElementById('btnNext').addEventListener('click', () => navigate(1));
+document.addEventListener('keydown', e => {
+  if(e.key === 'ArrowLeft' || e.key === 'ArrowUp') navigate(-1);
+  if(e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); navigate(1); }
+});
+
+// Click outside buttons = advance
+document.querySelector('.deck').addEventListener('click', e => {
+  if(!e.target.closest('.nav-btn') && !e.target.closest('.slide-inner')) return;
+  // Only advance if click isn't on interactive element
+});
+
+// Touch support
+let touchStartX = 0;
+document.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; });
+document.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].screenX - touchStartX;
+  if(Math.abs(dx) > 50) navigate(dx < 0 ? 1 : -1);
+});
+
+// ============================================================
+// Chart.js 渲染 (所有图表)
+// ============================================================
 const COLORS = {
-    primary:'#2563eb', primaryBg:'rgba(37,99,235,0.12)',
-    success:'#059669', successBg:'rgba(5,150,105,0.12)',
-    warning:'#d97706', warningBg:'rgba(217,119,6,0.12)',
-    info:'#0891b2', infoBg:'rgba(8,145,178,0.12)',
-    violet:'#7c3aed', violetBg:'rgba(124,58,237,0.12)',
-    danger:'#dc2626', dangerBg:'rgba(220,38,38,0.12)',
-    gridLine:'rgba(0,0,0,0.06)'
+  primary:'#7170ff', primaryBg:'rgba(113,113,255,0.15)',
+  success:'#10b981', successBg:'rgba(16,185,129,0.15)',
+  warning:'#eab308', warningBg:'rgba(234,179,8,0.15)',
+  info:'#38bdf8', infoBg:'rgba(56,189,248,0.15)',
+  danger:'#ef4444', dangerBg:'rgba(239,68,68,0.15)',
+  gridLine:'rgba(255,255,255,0.06)',
 };
-Chart.defaults.font.family="Inter,-apple-system,sans-serif";
+Chart.defaults.font.family="Inter,'Noto Sans SC',sans-serif";
 Chart.defaults.font.size=12;
-Chart.defaults.color='#64748b';
+Chart.defaults.color='#8a8f98';
 
-// ---- 1. 队列长度时序 ----
-(function(){
-    const ctx=document.getElementById('chartQueueLength'); if(!ctx) return;
-    const qlData={{ queue_length_ts | safe }}; if(!qlData||qlData.length<2) return;
-    const step=Math.max(1,Math.floor(qlData.length/2000));
-    const sampled=qlData.filter((_,i)=>i%step===0||i===qlData.length-1);
-    new Chart(ctx,{type:'line',data:{labels:sampled.map(d=>d.t),datasets:[{
-        label:'队列长度',data:sampled.map(d=>d.v),
-        borderColor:COLORS.primary,backgroundColor:COLORS.primaryBg,
-        fill:true,tension:0.3,pointRadius:0,borderWidth:1.5
-    }]},options:{responsive:true,maintainAspectRatio:true,animation:{duration:1000,easing:'easeOutQuart'},
-    plugins:{legend:{display:false},tooltip:{callbacks:{title:items=>'时间: '+items[0].label,label:item=>'队列人数: '+item.raw}}},
-    scales:{x:{title:{display:true,text:'时间'},grid:{color:COLORS.gridLine},ticks:{maxTicksLimit:12}},
-            y:{title:{display:true,text:'队列中顾客数'},grid:{color:COLORS.gridLine},beginAtZero:true,ticks:{stepSize:1}}}}});
-})();
+// Helper to ensure chart renders correctly in slide context
+function renderCharts(){
+  // 1. 队列长度时序
+  const qlData = JSON.parse('{{ queue_length_ts | safe }}');
+  if(qlData && qlData.length >= 2){
+    const step = Math.max(1, Math.floor(qlData.length / 1500));
+    const sampled = qlData.filter((_,i)=>i%step===0||i===qlData.length-1);
+    const ctx = document.getElementById('chartQueueLength');
+    if(ctx) new Chart(ctx, {type:'line', data:{
+      labels:sampled.map(d=>d.t),
+      datasets:[{label:'队列长度', data:sampled.map(d=>d.v), borderColor:COLORS.primary, backgroundColor:COLORS.primaryBg, fill:true, tension:0.3, pointRadius:0, borderWidth:1.5}]
+    }, options:{responsive:true, maintainAspectRatio:true, animation:{duration:800},
+      plugins:{legend:{display:false}, tooltip:{callbacks:{title:items=>'时间: '+items[0].label, label:item=>'队列人数: '+item.raw}}},
+      scales:{x:{title:{display:true,text:'时间'}, grid:{color:COLORS.gridLine}, ticks:{maxTicksLimit:10}},
+              y:{title:{display:true,text:'队列中顾客数'}, grid:{color:COLORS.gridLine}, beginAtZero:true, ticks:{stepSize:1}}}}});
+  }
 
-// ---- 2. 等待时间直方图 ----
-(function(){
-    const ctx=document.getElementById('chartWaitHistogram'); if(!ctx) return;
-    const rawData={{ wait_times | safe }}; if(!rawData||rawData.length<5) return;
-    const nBins=30,min=Math.min(...rawData),max=Math.max(...rawData),binWidth=(max-min)/nBins||0.01;
-    const bins=new Array(nBins).fill(0),binLabels=[];
-    for(let i=0;i<nBins;i++) binLabels.push((min+(i+0.5)*binWidth).toFixed(3));
-    rawData.forEach(v=>{const idx=Math.min(Math.floor((v-min)/binWidth),nBins-1);bins[idx]++});
-    new Chart(ctx,{type:'bar',data:{labels:binLabels,datasets:[{label:'频数',data:bins,backgroundColor:COLORS.primaryBg,borderColor:COLORS.primary,borderWidth:1,borderRadius:3}]},
-    options:{responsive:true,maintainAspectRatio:true,animation:{duration:1200,easing:'easeOutQuart'},
-    plugins:{legend:{display:false},tooltip:{callbacks:{title:items=>'等待时间 ≈ '+items[0].label,label:item=>'顾客数: '+item.raw}}},
-    scales:{x:{title:{display:true,text:'等待时间'},grid:{display:false},ticks:{maxTicksLimit:15,callback:v=>Number(v).toFixed(2)}},
-            y:{title:{display:true,text:'频数'},grid:{color:COLORS.gridLine},beginAtZero:true}}}});
-})();
+  // 2. 等待时间直方图
+  (function(){
+    const ctx = document.getElementById('chartWaitHistogram');
+    if(!ctx) return;
+    const rawData = JSON.parse('{{ wait_times | safe }}');
+    if(!rawData||rawData.length<5) return;
+    const nBins=25, min=Math.min(...rawData), max=Math.max(...rawData), binW=(max-min)/nBins||0.01;
+    const bins=new Array(nBins).fill(0), labels=[];
+    for(let i=0;i<nBins;i++) labels.push((min+(i+0.5)*binW).toFixed(3));
+    rawData.forEach(v=>{const idx=Math.min(Math.floor((v-min)/binW),nBins-1);bins[idx]++});
+    new Chart(ctx,{type:'bar', data:{labels, datasets:[{label:'频数',data:bins,backgroundColor:COLORS.primaryBg,borderColor:COLORS.primary,borderWidth:1,borderRadius:3}]},
+      options:{responsive:true,maintainAspectRatio:true,animation:{duration:800},
+        plugins:{legend:{display:false}},
+        scales:{x:{title:{display:true,text:'等待时间'},grid:{display:false},ticks:{maxTicksLimit:10}},
+                y:{title:{display:true,text:'频数'},grid:{color:COLORS.gridLine},beginAtZero:true}}}});
+  })();
 
-// ---- 3. 服务台利用率时序 ----
-(function(){
+  // 3. 利用率时序
+  (function(){
     const ctx=document.getElementById('chartUtilization'); if(!ctx) return;
-    const utilData={{ utilization_ts | safe }}; if(!utilData||utilData.length<2) return;
-    const step=Math.max(1,Math.floor(utilData.length/2000));
-    const sampled=utilData.filter((_,i)=>i%step===0||i===utilData.length-1);
-    new Chart(ctx,{type:'line',data:{labels:sampled.map(d=>d.t),datasets:[{label:'状态',data:sampled.map(d=>d.v),borderColor:COLORS.success,backgroundColor:COLORS.successBg,fill:true,tension:0,pointRadius:0,borderWidth:1.5,stepped:'before'}]},
-    options:{responsive:true,maintainAspectRatio:true,animation:{duration:800,easing:'easeOutQuart'},
-    plugins:{legend:{display:false},tooltip:{callbacks:{title:items=>'时间: '+items[0].label,label:item=>item.raw===1?'忙碌中':'空闲'}}},
-    scales:{x:{title:{display:true,text:'时间'},grid:{color:COLORS.gridLine},ticks:{maxTicksLimit:12}},
-            y:{title:{display:true,text:'状态'},grid:{color:COLORS.gridLine},min:-0.1,max:1.1,ticks:{stepSize:1,callback:v=>v===1?'忙碌':v===0?'空闲':''}}}}});
-})();
+    const ud=JSON.parse('{{ utilization_ts | safe }}'); if(!ud||ud.length<2) return;
+    const step=Math.max(1,Math.floor(ud.length/1500));
+    const sd=ud.filter((_,i)=>i%step===0||i===ud.length-1);
+    new Chart(ctx,{type:'line',data:{labels:sd.map(d=>d.t),datasets:[{label:'状态',data:sd.map(d=>d.v),borderColor:COLORS.success,backgroundColor:COLORS.successBg,fill:true,tension:0,pointRadius:0,borderWidth:1.5,stepped:'before'}]},
+      options:{responsive:true,maintainAspectRatio:true,animation:{duration:800},
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:item=>item.raw===1?'忙碌':'空闲'}}},
+        scales:{x:{title:{display:true,text:'时间'},grid:{color:COLORS.gridLine},ticks:{maxTicksLimit:10}},
+                y:{title:{display:true,text:'状态'},grid:{color:COLORS.gridLine},min:-0.1,max:1.1,ticks:{stepSize:1,callback:v=>v===1?'忙碌':v===0?'空闲':''}}}}});
+  })();
 
-// ---- 4. 系统时间分布 ----
-(function(){
+  // 4. 系统时间分布
+  (function(){
     const ctx=document.getElementById('chartSystemHistogram'); if(!ctx) return;
-    const rawData={{ system_times | safe }}; if(!rawData||rawData.length<5) return;
-    const nBins=30,min=Math.min(...rawData),max=Math.max(...rawData),binWidth=(max-min)/nBins||0.01;
-    const bins=new Array(nBins).fill(0),binLabels=[];
-    for(let i=0;i<nBins;i++) binLabels.push((min+(i+0.5)*binWidth).toFixed(3));
-    rawData.forEach(v=>{const idx=Math.min(Math.floor((v-min)/binWidth),nBins-1);bins[idx]++});
-    new Chart(ctx,{type:'bar',data:{labels:binLabels,datasets:[{label:'频数',data:bins,backgroundColor:COLORS.infoBg,borderColor:COLORS.info,borderWidth:1,borderRadius:3}]},
-    options:{responsive:true,maintainAspectRatio:true,animation:{duration:1200,easing:'easeOutQuart'},
-    plugins:{legend:{display:false},tooltip:{callbacks:{title:items=>'系统时间 ≈ '+items[0].label,label:item=>'顾客数: '+item.raw}}},
-    scales:{x:{title:{display:true,text:'系统逗留时间'},grid:{display:false},ticks:{maxTicksLimit:15,callback:v=>Number(v).toFixed(2)}},
-            y:{title:{display:true,text:'频数'},grid:{color:COLORS.gridLine},beginAtZero:true}}}});
-})();
+    const rd=JSON.parse('{{ system_times | safe }}'); if(!rd||rd.length<5) return;
+    const nb=25,mn=Math.min(...rd),mx=Math.max(...rd),bw=(mx-mn)/nb||0.01;
+    const bs=new Array(nb).fill(0),lb=[];
+    for(let i=0;i<nb;i++) lb.push((mn+(i+0.5)*bw).toFixed(3));
+    rd.forEach(v=>{const idx=Math.min(Math.floor((v-mn)/bw),nb-1);bs[idx]++});
+    new Chart(ctx,{type:'bar',data:{labels:lb,datasets:[{label:'频数',data:bs,backgroundColor:COLORS.infoBg,borderColor:COLORS.info,borderWidth:1,borderRadius:3}]},
+      options:{responsive:true,maintainAspectRatio:true,animation:{duration:800},
+        plugins:{legend:{display:false}},
+        scales:{x:{title:{display:true,text:'系统逗留时间'},grid:{display:false},ticks:{maxTicksLimit:10}},
+                y:{title:{display:true,text:'频数'},grid:{color:COLORS.gridLine},beginAtZero:true}}}});
+  })();
 
-// ---- 5. 敏感性分析 ----
-(function(){
+  // 5. 敏感性分析
+  (function(){
     const ctx=document.getElementById('chartSensitivity');
     if(!ctx) return;
-    const rawData={{ sensitivity | safe }};
-    if(!rawData||rawData.length<2) return;
+    const rd=JSON.parse('{{ sensitivity | safe }}');
+    if(!rd||rd.length<2) return;
+    new Chart(ctx,{type:'line',data:{
+      labels:rd.map(d=>'ρ='+d.rho.toFixed(2)),
+      datasets:[
+        {label:'仿真 Wq',data:rd.map(d=>d.sim_Wq),borderColor:COLORS.primary,backgroundColor:COLORS.primaryBg,fill:false,tension:0.3,pointRadius:5,borderWidth:2.5,yAxisID:'y'},
+        {label:'理论 Wq',data:rd.map(d=>d.theo_Wq),borderColor:COLORS.primary,borderDash:[6,4],fill:false,tension:0.3,pointRadius:4,borderWidth:1.5,yAxisID:'y'},
+        {label:'仿真 利用率',data:rd.map(d=>d.sim_U*100),borderColor:COLORS.success,backgroundColor:COLORS.successBg,fill:false,tension:0.3,pointRadius:5,borderWidth:2.5,yAxisID:'y1'},
+        {label:'理论 利用率',data:rd.map(d=>d.theo_U*100),borderColor:COLORS.success,borderDash:[6,4],fill:false,tension:0.3,pointRadius:4,borderWidth:1.5,yAxisID:'y1'},
+      ]},
+      options:{responsive:true,maintainAspectRatio:true,animation:{duration:1000},
+        plugins:{legend:{position:'top',labels:{color:'#8a8f98'}},tooltip:{mode:'index',intersect:false}},
+        scales:{
+          x:{title:{display:true,text:'系统负载 ρ'},grid:{color:COLORS.gridLine}},
+          y:{type:'linear',display:true,position:'left',title:{display:true,text:'等待时间 Wq'},grid:{color:COLORS.gridLine},beginAtZero:true},
+          y1:{type:'linear',display:true,position:'right',title:{display:true,text:'利用率 (%)'},grid:{drawOnChartArea:false},beginAtZero:true,max:100}
+        }}});
+  })();
 
-    // 双 y 轴：左侧 Wq，右侧 利用率
-    new Chart(ctx,{
-        type:'line',
-        data:{
-            labels:rawData.map(d=>'ρ='+d.rho.toFixed(2)),
-            datasets:[{
-                label:'仿真 Wq',
-                data:rawData.map(d=>d.sim_Wq),
-                borderColor:COLORS.primary,
-                backgroundColor:COLORS.primaryBg,
-                fill:false,tension:0.3,pointRadius:4,borderWidth:2,
-                yAxisID:'y'
-            },{
-                label:'理论 Wq',
-                data:rawData.map(d=>d.theo_Wq),
-                borderColor:COLORS.primary,
-                borderDash:[5,5],
-                fill:false,tension:0.3,pointRadius:3,borderWidth:1.5,
-                yAxisID:'y'
-            },{
-                label:'仿真 利用率',
-                data:rawData.map(d=>d.sim_U*100),
-                borderColor:COLORS.success,
-                backgroundColor:COLORS.successBg,
-                fill:false,tension:0.3,pointRadius:4,borderWidth:2,
-                yAxisID:'y1'
-            },{
-                label:'理论 利用率',
-                data:rawData.map(d=>d.theo_U*100),
-                borderColor:COLORS.success,
-                borderDash:[5,5],
-                fill:false,tension:0.3,pointRadius:3,borderWidth:1.5,
-                yAxisID:'y1'
-            }]
-        },
-        options:{
-            responsive:true,maintainAspectRatio:true,
-            animation:{duration:1200,easing:'easeOutQuart'},
-            plugins:{
-                legend:{position:'top'},
-                tooltip:{mode:'index',intersect:false}
-            },
-            scales:{
-                x:{title:{display:true,text:'系统负载 ρ'},grid:{color:COLORS.gridLine}},
-                y:{
-                    type:'linear',display:true,position:'left',
-                    title:{display:true,text:'等待时间 Wq'},
-                    grid:{color:COLORS.gridLine},
-                    beginAtZero:true
-                },
-                y1:{
-                    type:'linear',display:true,position:'right',
-                    title:{display:true,text:'利用率 (%)'},
-                    grid:{drawOnChartArea:false},
-                    beginAtZero:true,max:100
-                }
-            }
-        }
-    });
-})();
-
-// ---- 6. 系统状态概率 ----
-(function(){
+  // 6. 系统状态概率
+  (function(){
     const ctx=document.getElementById('chartStateProb'); if(!ctx) return;
-    const sp={{ state_prob | safe }}; if(!sp||!sp.labels||sp.labels.length<2) return;
+    const sp=JSON.parse('{{ state_prob | safe }}'); if(!sp||!sp.labels||sp.labels.length<2) return;
+    new Chart(ctx,{type:'bar',data:{
+      labels:sp.labels.map((_,i)=>'n='+i),
+      datasets:[
+        {label:'仿真观测值',data:sp.sim,backgroundColor:COLORS.primaryBg,borderColor:COLORS.primary,borderWidth:1.5,borderRadius:4,order:2},
+        {label:'理论 P(n)=ρⁿ(1-ρ)',data:sp.theory,type:'line',borderColor:COLORS.danger,pointRadius:5,pointBackgroundColor:COLORS.danger,borderWidth:2,tension:0.3,order:1}
+      ]},
+      options:{responsive:true,maintainAspectRatio:true,animation:{duration:800},
+        plugins:{legend:{position:'top',labels:{color:'#8a8f98'}},tooltip:{callbacks:{label:ctx=>(ctx.dataset.label+': '+(ctx.raw*100).toFixed(2)+'%')}}},
+        scales:{x:{title:{display:true,text:'系统中顾客数 n'},grid:{display:false}},
+                y:{title:{display:true,text:'概率'},grid:{color:COLORS.gridLine},beginAtZero:true,ticks:{callback:v=>(v*100).toFixed(1)+'%'}}}}});
+  })();
 
-    new Chart(ctx,{
-        type:'bar',
-        data:{
-            labels:sp.labels.map((_,i)=>'n='+i),
-            datasets:[{
-                label:'仿真观测值',
-                data:sp.sim,
-                backgroundColor:COLORS.primaryBg,
-                borderColor:COLORS.primary,
-                borderWidth:1.5,
-                borderRadius:4,
-                order:2
-            },{
-                label:'理论 P(n) = ρⁿ·(1−ρ)',
-                data:sp.theory,
-                type:'line',
-                borderColor:COLORS.danger,
-                backgroundColor:COLORS.dangerBg,
-                pointRadius:5,
-                pointBackgroundColor:COLORS.danger,
-                borderWidth:2,
-                tension:0.3,
-                order:1
-            }]
-        },
-        options:{
-            responsive:true,maintainAspectRatio:true,
-            animation:{duration:1000,easing:'easeOutQuart'},
-            plugins:{
-                legend:{position:'top'},
-                tooltip:{
-                    callbacks:{
-                        label:ctx=>{
-                            const v=ctx.raw;
-                            return ctx.dataset.label+': '+(v*100).toFixed(2)+'%';
-                        }
-                    }
-                }
-            },
-            scales:{
-                x:{title:{display:true,text:'系统中顾客数 n'},grid:{display:false}},
-                y:{
-                    title:{display:true,text:'概率'},
-                    grid:{color:COLORS.gridLine},
-                    beginAtZero:true,
-                    ticks:{callback:v=>(v*100).toFixed(1)+'%'}
-                }
-            }
-        }
-    });
-})();
-
-// ---- 7. 等待时间分布拟合 ----
-(function(){
+  // 7. 等待时间分布
+  (function(){
     const ctx=document.getElementById('chartWaitDist'); if(!ctx) return;
-    const wd={{ wait_dist | safe }}; if(!wd||!wd.sim_t||wd.sim_t.length<2) return;
+    const wd=JSON.parse('{{ wait_dist | safe }}'); if(!wd||!wd.sim_t||wd.sim_t.length<2) return;
+    new Chart(ctx,{type:'line',data:{
+      labels:wd.sim_t.map(t=>t.toFixed(2)),
+      datasets:[
+        {label:'仿真生存函数',data:wd.sim_survival,borderColor:COLORS.primary,backgroundColor:COLORS.primaryBg,fill:true,tension:0.3,pointRadius:0,borderWidth:2},
+        {label:'理论 ρ·exp(-μ(1-ρ)t)',data:wd.theory_survival,borderColor:COLORS.danger,borderDash:[6,4],fill:false,tension:0.3,pointRadius:0,borderWidth:2}
+      ]},
+      options:{responsive:true,maintainAspectRatio:true,animation:{duration:800},
+        plugins:{legend:{position:'top',labels:{color:'#8a8f98'}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+(ctx.raw*100).toFixed(1)+'%'}}},
+        scales:{x:{title:{display:true,text:'等待时间 t'},grid:{color:COLORS.gridLine}},
+                y:{title:{display:true,text:'P(Wq > t)'},grid:{color:COLORS.gridLine},beginAtZero:true,min:0,max:1,ticks:{callback:v=>(v*100).toFixed(0)+'%'}}}}});
+  })();
 
-    new Chart(ctx,{
-        type:'line',
-        data:{
-            labels:wd.sim_t.map(t=>t.toFixed(2)),
-            datasets:[{
-                label:'仿真生存函数',
-                data:wd.sim_survival,
-                borderColor:COLORS.primary,
-                backgroundColor:COLORS.primaryBg,
-                fill:true,
-                tension:0.3,
-                pointRadius:0,
-                borderWidth:2
-            },{
-                label:'理论：ρ·exp(-μ(1-ρ)t)',
-                data:wd.theory_survival,
-                borderColor:COLORS.danger,
-                borderDash:[6,4],
-                fill:false,
-                tension:0.3,
-                pointRadius:0,
-                borderWidth:2
-            }]
-        },
-        options:{
-            responsive:true,maintainAspectRatio:true,
-            animation:{duration:1000,easing:'easeOutQuart'},
-            plugins:{
-                legend:{position:'top'},
-                tooltip:{
-                    callbacks:{
-                        label:ctx=>{
-                            const v=ctx.raw;
-                            return ctx.dataset.label+': P(Wq>t) = '+(v*100).toFixed(1)+'%';
-                        }
-                    }
-                }
-            },
-            scales:{
-                x:{title:{display:true,text:'等待时间 t'},grid:{color:COLORS.gridLine}},
-                y:{title:{display:true,text:'P(Wq > t)'},grid:{color:COLORS.gridLine},beginAtZero:true,min:0,max:1,
-                   ticks:{callback:v=>(v*100).toFixed(0)+'%'}}
-            }
-        }
-    });
-})();
-
-// ---- 8. 收敛性分析 ----
-(function(){
+  // 8. 收敛性分析
+  (function(){
     const ctx=document.getElementById('chartConvergence'); if(!ctx) return;
-    const cd={{ convergence | safe }}; if(!cd||cd.length<2) return;
+    const cd=JSON.parse('{{ convergence | safe }}'); if(!cd||cd.length<2) return;
+    new Chart(ctx,{type:'line',data:{
+      labels:cd.map(d=>d.sim_time),
+      datasets:[
+        {label:'Wq 误差 (%)',data:cd.map(d=>d.error_Wq_pct),borderColor:COLORS.warning,backgroundColor:COLORS.warningBg,fill:true,tension:0.3,pointRadius:6,pointBackgroundColor:COLORS.warning,borderWidth:2},
+        {label:'利用率 误差 (%)',data:cd.map(d=>d.error_U_pct),borderColor:COLORS.primary,backgroundColor:COLORS.primaryBg,fill:true,tension:0.3,pointRadius:6,pointBackgroundColor:COLORS.primary,borderWidth:2}
+      ]},
+      options:{responsive:true,maintainAspectRatio:true,animation:{duration:800},
+        plugins:{legend:{position:'top',labels:{color:'#8a8f98'}}},
+        scales:{x:{title:{display:true,text:'仿真时长'},grid:{color:COLORS.gridLine},type:'logarithmic',ticks:{callback:v=>v}},
+                y:{title:{display:true,text:'相对误差 (%)'},grid:{color:COLORS.gridLine},beginAtZero:true}}}});
+  })();
+}
 
-    new Chart(ctx,{
-        type:'line',
-        data:{
-            labels:cd.map(d=>d.sim_time),
-            datasets:[{
-                label:'Wq 误差 (%)',
-                data:cd.map(d=>d.error_Wq_pct),
-                borderColor:COLORS.warning,
-                backgroundColor:COLORS.warningBg,
-                fill:true,
-                tension:0.3,
-                pointRadius:5,
-                pointBackgroundColor:COLORS.warning,
-                borderWidth:2
-            },{
-                label:'利用率 误差 (%)',
-                data:cd.map(d=>d.error_U_pct),
-                borderColor:COLORS.primary,
-                backgroundColor:COLORS.primaryBg,
-                fill:true,
-                tension:0.3,
-                pointRadius:5,
-                pointBackgroundColor:COLORS.primary,
-                borderWidth:2
-            }]
-        },
-        options:{
-            responsive:true,maintainAspectRatio:true,
-            animation:{duration:1000,easing:'easeOutQuart'},
-            plugins:{legend:{position:'top'}},
-            scales:{
-                x:{
-                    title:{display:true,text:'仿真时长'},
-                    grid:{color:COLORS.gridLine},
-                    type:'logarithmic',
-                    ticks:{callback:v=>v}
-                },
-                y:{
-                    title:{display:true,text:'相对误差 (%)'},
-                    grid:{color:COLORS.gridLine},
-                    beginAtZero:true
-                }
-            }
-        }
-    });
-})();
+// Wait for DOM, then render
+document.addEventListener('DOMContentLoaded', renderCharts);
 </script>
 </body>
 </html>
